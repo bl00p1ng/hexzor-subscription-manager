@@ -12,6 +12,7 @@ import PostgreSQLManager from './database/PostgreSQLManager.js';
 import EmailService from './services/EmailService.js';
 import authRoutes from './routes/auth.js';
 import adminRoutes from './routes/admin.js';
+import adminPanelRoutes from './routes/admin-panel.js';
 
 // Configuración de variables de entorno
 dotenv.config();
@@ -176,6 +177,9 @@ class AuthServer {
         // Rutas de administración
         this.app.use('/api/admin', adminRoutes);
 
+        // Rutas del panel de administración
+        this.app.use('/admin', adminPanelRoutes);
+
         // Ruta para obtener información del servidor
         this.app.get('/api/status', async (req, res) => {
             try {
@@ -205,8 +209,8 @@ class AuthServer {
             }
         });
 
-        // Ruta catch-all para SPA del panel admin
-        this.app.get('*', (req, res) => {
+    // Ruta catch-all para SPA del panel admin
+    this.app.get(/.*/, (req, res) => {
             if (req.path.startsWith('/api/')) {
                 return res.status(404).json({
                     success: false,
