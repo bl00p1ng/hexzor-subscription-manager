@@ -173,36 +173,6 @@ class SetupWizard {
     }
 
     /**
-     * Verifica la configuración de email
-     */
-    async checkEmailConfiguration() {
-        console.log('📧 Verificando configuración de email...');
-
-        if (!process.env.SMTP_USER || !process.env.SMTP_PASS) {
-            console.log('⚠️ SMTP no configurado - los emails no funcionarán');
-            console.log('');
-            console.log('Para configurar emails:');
-            console.log('1. Edita el archivo .env');
-            console.log('2. Configura SMTP_USER y SMTP_PASS');
-            console.log('3. Reinicia el servidor');
-            console.log('');
-            return;
-        }
-
-        const shouldTest = await this.askQuestion('¿Deseas probar el envío de email? (y/N): ');
-        if (shouldTest.toLowerCase() === 'y') {
-            const testEmail = await this.askQuestion('Email de prueba: ');
-            if (this.isValidEmail(testEmail)) {
-                console.log('📧 Enviando email de prueba...');
-                console.log('⚠️ Función de prueba no implementada aún');
-            } else {
-                console.log('❌ Email inválido');
-            }
-        }
-        console.log('');
-    }
-
-    /**
      * Muestra el resumen final de la configuración
      */
     showFinalSummary() {
