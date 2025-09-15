@@ -1,5 +1,4 @@
 import { createInterface } from 'readline';
-import { promises as fs } from 'fs';
 import PostgreSQLManager from '../database/PostgreSQLManager.js';
 import dotenv from 'dotenv';
 import crypto from 'crypto';
@@ -137,8 +136,8 @@ class SetupWizard {
             throw new Error('Email inválido');
         }
 
-        // Verificar si el email ya existe
-        const existingEmail = await this.db.getOne('SELECT id FROM admin_users WHERE email = ?', [email]);
+        // Verificar si el email ya existe - LÍNEA CORREGIDA
+        const existingEmail = await this.db.getOne('SELECT id FROM admin_users WHERE email = $1', [email]);
         if (existingEmail) {
             throw new Error('Ya existe un administrador con este email');
         }
@@ -191,16 +190,13 @@ class SetupWizard {
         }
 
         const shouldTest = await this.askQuestion('¿Deseas probar el envío de email? (y/N): ');
-        
         if (shouldTest.toLowerCase() === 'y') {
-            const testEmail = await this.askQuestion('Email para prueba: ');
-            
+            const testEmail = await this.askQuestion('Email de prueba: ');
             if (this.isValidEmail(testEmail)) {
-                // Aquí podrías importar y probar EmailService
                 console.log('📧 Enviando email de prueba...');
-                console.log('(Para implementar: importar EmailService y enviar email de prueba)');
+                console.log('⚠️ Función de prueba no implementada aún');
             } else {
-                console.log('❌ Email inválido para prueba');
+                console.log('❌ Email inválido');
             }
         }
         console.log('');
@@ -212,41 +208,25 @@ class SetupWizard {
     showFinalSummary() {
         console.log('🎉 CONFIGURACIÓN COMPLETADA');
         console.log('═'.repeat(50));
-        console.log('');
-        console.log('✅ Sistema de autenticación configurado correctamente');
+        console.log('✅ Base de datos inicializada');
+        console.log('✅ Usuario administrador creado');
         console.log('');
         console.log('📋 Próximos pasos:');
-        console.log('1. Iniciar el servidor: npm start');
-        console.log('2. Acceder al panel admin: http://localhost:3001');
-        console.log('3. Gestionar suscripciones desde el panel');
-        console.log('4. Integrar con la aplicación principal');
+        console.log('1. Ejecuta: npm start');
+        console.log('2. Accede al panel de administración');
+        console.log('3. Configura las suscripciones');
         console.log('');
-        console.log('🔧 URLs importantes:');
-        console.log(`   Panel Admin: http://localhost:${process.env.PORT || 3001}`);
-        console.log(`   API Health: http://localhost:${process.env.PORT || 3001}/health`);
-        console.log(`   API Auth: http://localhost:${process.env.PORT || 3001}/api/auth`);
-        console.log('');
-        console.log('📖 Documentación de la API disponible en el README.md');
+        console.log('🔗 Endpoints disponibles:');
+        console.log('   • POST /api/auth/admin/login - Login de administrador');
+        console.log('   • POST /api/auth/request-access - Solicitar acceso');
+        console.log('   • GET /api/status - Estado del servidor');
         console.log('');
     }
 
     /**
-     * Genera un JWT_SECRET aleatorio si no existe
-     */
-    async generateJWTSecret() {
-        const secret = crypto.randomBytes(64).toString('hex');
-        console.log('🔑 JWT_SECRET generado:');
-        console.log(secret);
-        console.log('');
-        console.log('Agrega esta línea a tu archivo .env:');
-        console.log(`JWT_SECRET=${secret}`);
-        return secret;
-    }
-
-    /**
-     * Hace una pregunta al usuario y retorna la respuesta
-     * @param {string} question - Pregunta a hacer
-     * @returns {Promise<string>} Respuesta del usuario
+     * Realiza una pregunta al usuario y retorna la respuesta
+     * @param {string} question - La pregunta a realizar
+     * @returns {Promise<string>} La respuesta del usuario
      */
     askQuestion(question) {
         return new Promise((resolve) => {
@@ -257,53 +237,55 @@ class SetupWizard {
     }
 
     /**
-     * Hace una pregunta de contraseña (oculta la entrada)
-     * @param {string} question - Pregunta a hacer
-     * @returns {Promise<string>} Respuesta del usuario
+     * Realiza una pregunta de contraseña (sin mostrar la entrada)
+     * @param {string} question - La pregunta a realizar
+     * @returns {Promise<string>} La contraseña ingresada
      */
     askPasswordQuestion(question) {
         return new Promise((resolve) => {
             process.stdout.write(question);
             
-            // Ocultar entrada
+            // Deshabilitar echo para ocultar la contraseña
             process.stdin.setRawMode(true);
             process.stdin.resume();
             process.stdin.setEncoding('utf8');
-            
+
             let password = '';
-            
-            process.stdin.on('data', (char) => {
-                char = char.toString();
-                
-                if (char === '\r' || char === '\n') {
-                    // Enter presionado
-                    process.stdin.setRawMode(false);
-                    process.stdin.pause();
-                    process.stdout.write('\n');
-                    process.stdin.removeAllListeners('data');
-                    resolve(password);
-                } else if (char === '\u0003') {
-                    // Ctrl+C presionado
-                    process.exit(1);
-                } else if (char === '\u007f') {
-                    // Backspace presionado
-                    if (password.length > 0) {
-                        password = password.slice(0, -1);
-                        process.stdout.write('\b \b');
-                    }
-                } else {
-                    // Carácter normal
-                    password += char;
-                    process.stdout.write('*');
+            const onData = (char) => {
+                switch (char) {
+                    case '\n':
+                    case '\r':
+                    case '\u0004': // Ctrl+D
+                        process.stdin.setRawMode(false);
+                        process.stdin.pause();
+                        process.stdin.removeListener('data', onData);
+                        console.log(''); // Nueva línea
+                        resolve(password);
+                        break;
+                    case '\u0003': // Ctrl+C
+                        process.exit(1);
+                        break;
+                    case '\u007f': // Backspace
+                        if (password.length > 0) {
+                            password = password.slice(0, -1);
+                            process.stdout.write('\b \b');
+                        }
+                        break;
+                    default:
+                        password += char;
+                        process.stdout.write('*');
+                        break;
                 }
-            });
+            };
+
+            process.stdin.on('data', onData);
         });
     }
 
     /**
-     * Valida si un email es válido
+     * Valida el formato de un email
      * @param {string} email - Email a validar
-     * @returns {boolean} True si es válido
+     * @returns {boolean} True si el email es válido
      */
     isValidEmail(email) {
         const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
@@ -311,40 +293,16 @@ class SetupWizard {
     }
 
     /**
-     * Cierra la conexión a la base de datos
+     * Genera un JWT_SECRET seguro si no existe
+     * @returns {string} JWT_SECRET generado
      */
-    async cleanup() {
-        if (this.db) {
-            await this.db.close();
-        }
+    generateJwtSecret() {
+        return crypto.randomBytes(64).toString('hex');
     }
 }
 
-// Ejecutar wizard si el archivo se ejecuta directamente
+// Ejecutar el wizard si el archivo se ejecuta directamente
 if (import.meta.url === `file://${process.argv[1]}`) {
     const wizard = new SetupWizard();
-    
-    // Manejo de cierre elegante
-    process.on('SIGINT', async () => {
-        console.log('\n\n🛑 Configuración cancelada por el usuario');
-        await wizard.cleanup();
-        process.exit(0);
-    });
-
-    process.on('SIGTERM', async () => {
-        await wizard.cleanup();
-        process.exit(0);
-    });
-
-    // Ejecutar wizard
-    wizard.run().then(async () => {
-        await wizard.cleanup();
-        process.exit(0);
-    }).catch(async (error) => {
-        console.error('Error en wizard:', error.message);
-        await wizard.cleanup();
-        process.exit(1);
-    });
+    wizard.run();
 }
-
-export default SetupWizard;
