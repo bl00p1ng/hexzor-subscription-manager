@@ -452,14 +452,99 @@ function generateSubscriptionsHTML(admin, subscriptionsData) {
 
     <script>
         // JavaScript para manejo de formularios y acciones
-        document.getElementById('newSubscriptionForm').addEventListener('submit', async (e) => {
-            e.preventDefault();
-            // Implementar envío de formulario
-        });
+        const newSubscriptionForm = document.getElementById('newSubscriptionForm');
+        if (newSubscriptionForm) {
+            newSubscriptionForm.addEventListener('submit', async (e) => {
+                e.preventDefault();
+
+                const form = e.target;
+                const submitBtn = form.querySelector('button[type="submit"]');
+                let alertContainer = document.getElementById('subscriptionAlert');
+                if (!alertContainer) {
+                    alertContainer = document.createElement('div');
+                    alertContainer.id = 'subscriptionAlert';
+                    form.parentNode.insertBefore(alertContainer, form);
+                }
+
+                try {
+                    submitBtn.disabled = true;
+                    submitBtn.textContent = 'Guardando...';
+
+                    const formData = new FormData(form);
+                    const payload = {
+                        email: formData.get('email'),
+                        customerName: formData.get('customerName'),
+                        startDate: formData.get('startDate'),
+                        endDate: formData.get('endDate'),
+                        subscriptionId: formData.get('subscriptionId') || undefined,
+                        hotmartTransactionId: formData.get('hotmartTransactionId') || undefined,
+                        notes: formData.get('notes') || undefined
+                    };
+
+                    // Construir headers y añadir Authorization si existe adminToken en cookies
+                    const headers = { 'Content-Type': 'application/json' };
+                    const adminToken = (document.cookie || '').split(';').map(s => s.trim()).find(s => s.startsWith('adminToken='));
+                        if (adminToken) {
+                            const token = adminToken.split('=')[1];
+                            if (token) headers['Authorization'] = 'Bearer ' + token;
+                        }
+
+                    const response = await fetch('/api/admin/subscriptions', {
+                        method: 'POST',
+                        credentials: 'include', // enviar cookies (por si acaso)
+                        headers,
+                        body: JSON.stringify(payload)
+                    });
+
+                    const result = await response.json();
+
+                    if (result && result.success) {
+                        alertContainer.innerHTML = '<div class="alert success">' + (result.message || 'Suscripción creada correctamente') + '</div>';
+                        form.reset();
+                        setTimeout(() => location.reload(), 700);
+                    } else {
+                        const errMsg = (result && result.error) || 'Error creando suscripción';
+                        alertContainer.innerHTML = '<div class="alert error">' + errMsg + '</div>';
+                    }
+
+                } catch (error) {
+                    console.error('Error enviando nueva suscripción:', error);
+                    alertContainer.innerHTML = '<div class="alert error">Error de conexión o interno</div>';
+                } finally {
+                    submitBtn.disabled = false;
+                    submitBtn.textContent = 'Agregar Suscripción';
+                }
+            });
+        }
 
         async function expireSubscription(id) {
             if (!confirm('¿Estás seguro de expirar esta suscripción?')) return;
-            // Implementar expiración
+
+            try {
+                const headers = {};
+                const adminToken = (document.cookie || '').split(';').map(s => s.trim()).find(s => s.startsWith('adminToken='));
+                if (adminToken) {
+                    const token = adminToken.split('=')[1];
+                    if (token) headers['Authorization'] = 'Bearer ' + token;
+                }
+
+                const response = await fetch('/api/admin/subscriptions/' + id, {
+                    method: 'DELETE',
+                    credentials: 'include',
+                    headers
+                });
+
+                const result = await response.json();
+                if (result && result.success) {
+                    alert('Suscripción expirada correctamente');
+                    location.reload();
+                } else {
+                    alert(result.error || 'No se pudo expirar la suscripción');
+                }
+            } catch (error) {
+                console.error('Error expiring subscription:', error);
+                alert('Error de conexión al intentar expirar la suscripción');
+            }
         }
     </script>
 </body>
