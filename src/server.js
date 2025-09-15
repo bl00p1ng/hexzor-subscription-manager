@@ -9,7 +9,7 @@ import dotenv from 'dotenv';
 // Importar servicios y rutas
 import EmailService from './services/EmailService.js';
 import authRoutes from './routes/auth.js';
-import adminRoutes from './routes/admin.js';
+import adminRoutes from './routes/admin.js'
 
 // Configuración de variables de entorno
 dotenv.config();
@@ -130,9 +130,10 @@ class AuthServer {
         });
         this.app.use(globalLimiter);
 
-        // Parsear JSON
+        // Parsear JSON y cookies
         this.app.use(express.json({ limit: '10mb' }));
         this.app.use(express.urlencoded({ extended: true, limit: '10mb' }));
+        this.app.use(require('cookie-parser')());
 
         // Trust proxy para obtener IP real
         this.app.set('trust proxy', 1);
@@ -149,6 +150,11 @@ class AuthServer {
      * Configura las rutas de la API
      */
     setupRoutes() {
+        // Ruta raíz - página de información
+        this.app.get('/', (req, res) => {
+            res.sendFile(join(__dirname, 'public', 'index.html'));
+        });
+
         // Ruta de health check
         this.app.get('/health', (req, res) => {
             res.json({
