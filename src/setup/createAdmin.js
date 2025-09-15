@@ -1,6 +1,6 @@
 import { createInterface } from 'readline';
 import { promises as fs } from 'fs';
-import AuthDatabaseManager from '../database/AuthDatabaseManager.js';
+import PostgreSQLManager from '../database/PostgreSQLManager.js';
 import dotenv from 'dotenv';
 import crypto from 'crypto';
 
@@ -17,7 +17,7 @@ class SetupWizard {
             input: process.stdin,
             output: process.stdout
         });
-        this.db = new AuthDatabaseManager();
+        this.db = new PostgreSQLManager();
     }
 
     /**
