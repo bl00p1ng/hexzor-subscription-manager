@@ -32,7 +32,7 @@ class EmailService {
                 return;
             }
 
-            this.transporter = nodemailer.createTransporter(this.config);
+            this.transporter = nodemailer.createTransport(this.config);
             
             // Verificar conexión SMTP
             await this.transporter.verify();
@@ -112,56 +112,53 @@ class EmailService {
         .container {
             background: white;
             border-radius: 10px;
+            padding: 30px;
             box-shadow: 0 2px 10px rgba(0,0,0,0.1);
-            overflow: hidden;
         }
         .header {
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-            color: white;
-            padding: 30px 20px;
             text-align: center;
+            margin-bottom: 30px;
         }
-        .header h1 {
-            margin: 0;
-            font-size: 28px;
-            font-weight: 300;
-        }
-        .content {
-            padding: 30px 20px;
+        .logo {
+            font-size: 24px;
+            font-weight: bold;
+            color: #2563eb;
+            margin-bottom: 10px;
         }
         .code-container {
-            background: #f8f9fa;
-            border: 2px dashed #6c757d;
+            background: #f8fafc;
+            border: 2px dashed #e2e8f0;
             border-radius: 8px;
             padding: 20px;
             text-align: center;
-            margin: 20px 0;
+            margin: 25px 0;
         }
         .access-code {
             font-size: 32px;
             font-weight: bold;
-            color: #495057;
+            color: #1e40af;
             letter-spacing: 4px;
+            margin: 10px 0;
             font-family: 'Courier New', monospace;
         }
         .warning {
-            background: #fff3cd;
-            border: 1px solid #ffeaa7;
+            background: #fef3c7;
+            border: 1px solid #f59e0b;
             border-radius: 6px;
             padding: 15px;
             margin: 20px 0;
-            color: #856404;
         }
         .footer {
-            background: #f8f9fa;
-            padding: 20px;
+            margin-top: 30px;
+            padding-top: 20px;
+            border-top: 1px solid #e5e7eb;
             text-align: center;
-            color: #6c757d;
             font-size: 14px;
+            color: #6b7280;
         }
         .button {
             display: inline-block;
-            background: #667eea;
+            background: #2563eb;
             color: white;
             padding: 12px 24px;
             text-decoration: none;
@@ -173,38 +170,35 @@ class EmailService {
 <body>
     <div class="container">
         <div class="header">
-            <h1>🍪 Nexos Cookies Tool</h1>
-            <p>Tu código de acceso está listo</p>
+            <div class="logo">🍪 Nexos Cookies Tool</div>
+            <h1>Código de Acceso</h1>
+            <p>Hola ${customerName},</p>
+            <p>Aquí tienes tu código de acceso temporal para ingresar a la aplicación:</p>
         </div>
-        
-        <div class="content">
-            <h2>Hola ${customerName},</h2>
-            
-            <p>Has solicitado acceso a <strong>Nexos Cookies Tool</strong>. Utiliza el siguiente código para completar tu autenticación:</p>
-            
-            <div class="code-container">
-                <div class="access-code">${code}</div>
-                <p style="margin: 10px 0 0 0; color: #6c757d;">Código de acceso</p>
-            </div>
-            
-            <div class="warning">
-                <strong>⚠️ Importante:</strong>
-                <ul style="margin: 10px 0; padding-left: 20px;">
-                    <li>Este código es válido por <strong>10 minutos</strong></li>
-                    <li>Solo puede ser usado una vez</li>
-                    <li>No compartas este código con nadie</li>
-                    <li>Si no solicitaste este código, ignora este email</li>
-                </ul>
-            </div>
-            
-            <p>Si tienes algún problema para acceder, contacta a nuestro equipo de soporte.</p>
-            
-            <p>¡Gracias por confiar en nosotros!</p>
+
+        <div class="code-container">
+            <p><strong>Tu código de acceso es:</strong></p>
+            <div class="access-code">${code}</div>
+            <p><small>Válido por 10 minutos</small></p>
         </div>
-        
+
+        <div class="warning">
+            <h3>⚠️ Importante:</h3>
+            <ul>
+                <li>Este código es válido por <strong>10 minutos</strong></li>
+                <li>Solo puede ser usado <strong>una vez</strong></li>
+                <li>No compartas este código con nadie</li>
+                <li>Si no solicitaste este código, ignora este email</li>
+            </ul>
+        </div>
+
+        <p>Ingresa este código en la aplicación para completar tu autenticación.</p>
+        <p>Si tienes algún problema para acceder, contacta a nuestro equipo de soporte.</p>
+        <p>¡Gracias por confiar en nosotros!</p>
+
         <div class="footer">
             <p>Este email fue enviado automáticamente. Por favor no respondas a este mensaje.</p>
-            <p>&copy; ${new Date().getFullYear()} Nexos Cookies Tool. Todos los derechos reservados.</p>
+            <p>© ${new Date().getFullYear()} Nexos Cookies Tool. Todos los derechos reservados.</p>
         </div>
     </div>
 </body>
@@ -212,18 +206,17 @@ class EmailService {
     }
 
     /**
-     * Genera el contenido de texto plano del email
+     * Genera el contenido de texto plano del email del código de acceso
      * @param {string} code - Código de acceso
      * @param {string} customerName - Nombre del cliente
-     * @returns {string} Contenido de texto
+     * @returns {string} Contenido de texto plano
      */
     generateAccessCodeTextEmail(code, customerName) {
         return `
-NEXOS COOKIES TOOL - CÓDIGO DE ACCESO
+🍪 NEXOS COOKIES TOOL
+CÓDIGO DE ACCESO
 
 Hola ${customerName},
-
-Has solicitado acceso a Nexos Cookies Tool. 
 
 TU CÓDIGO DE ACCESO: ${code}
 
