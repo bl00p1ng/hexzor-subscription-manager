@@ -2,14 +2,16 @@ import express from 'express';
 import cors from 'cors';
 import helmet from 'helmet';
 import rateLimit from 'express-rate-limit';
+import cookieParser from 'cookie-parser';
 import { fileURLToPath } from 'url';
 import { dirname, join } from 'path';
 import dotenv from 'dotenv';
 
 // Importar servicios y rutas
+import PostgreSQLManager from './database/PostgreSQLManager.js';
 import EmailService from './services/EmailService.js';
 import authRoutes from './routes/auth.js';
-import adminRoutes from './routes/admin.js'
+import adminRoutes from './routes/admin.js';
 
 // Configuración de variables de entorno
 dotenv.config();
@@ -41,7 +43,7 @@ class AuthServer {
             this.validateEnvironment();
 
             // Inicializar base de datos
-            this.db = new AuthDatabaseManager();
+            this.db = new PostgreSQLManager();
             await this.db.initialize();
 
             // Inicializar servicio de email
@@ -133,7 +135,7 @@ class AuthServer {
         // Parsear JSON y cookies
         this.app.use(express.json({ limit: '10mb' }));
         this.app.use(express.urlencoded({ extended: true, limit: '10mb' }));
-        this.app.use(require('cookie-parser')());
+        this.app.use(cookieParser());
 
         // Trust proxy para obtener IP real
         this.app.set('trust proxy', 1);
@@ -162,7 +164,7 @@ class AuthServer {
                 message: 'Servidor funcionando correctamente',
                 timestamp: new Date().toISOString(),
                 services: {
-                    database: !!this.db,
+                    database: !this.db,
                     email: this.emailService.isConfigured()
                 }
             });
@@ -189,7 +191,7 @@ class AuthServer {
                         services: {
                             database: {
                                 connected: !!this.db,
-                                type: 'SQLite'
+                                type: 'PostgreSQL'
                             },
                             email: emailStatus
                         }
