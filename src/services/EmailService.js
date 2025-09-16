@@ -18,7 +18,7 @@ class EmailService {
         };
         
         this.fromEmail = process.env.FROM_EMAIL || process.env.SMTP_USER;
-        this.fromName = process.env.FROM_NAME || 'Nexos Cookies Tool';
+        this.fromName = process.env.FROM_NAME || 'Hexzor Cookies Tool';
     }
 
     /**
@@ -65,7 +65,7 @@ class EmailService {
             const mailOptions = {
                 from: `"${this.fromName}" <${this.fromEmail}>`,
                 to: email,
-                subject: 'Tu código de acceso - Nexos Cookies Tool',
+                subject: 'Tu código de acceso - Hexzor Cookies Tool',
                 text: textContent,
                 html: htmlContent
             };
@@ -98,7 +98,7 @@ class EmailService {
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Código de Acceso - Nexos Cookies Tool</title>
+    <title>Código de Acceso - Hexzor Cookies Tool</title>
     <style>
         body {
             font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
@@ -170,7 +170,7 @@ class EmailService {
 <body>
     <div class="container">
         <div class="header">
-            <div class="logo">🍪 Nexos Cookies Tool</div>
+            <div class="logo">🍪 Hexzor Cookies Tool</div>
             <h1>Código de Acceso</h1>
             <p>Hola ${customerName},</p>
             <p>Aquí tienes tu código de acceso temporal para ingresar a la aplicación:</p>
@@ -198,7 +198,7 @@ class EmailService {
 
         <div class="footer">
             <p>Este email fue enviado automáticamente. Por favor no respondas a este mensaje.</p>
-            <p>© ${new Date().getFullYear()} Nexos Cookies Tool. Todos los derechos reservados.</p>
+            <p>© ${new Date().getFullYear()} Hexzor Cookies Tool. Todos los derechos reservados.</p>
         </div>
     </div>
 </body>
@@ -213,7 +213,7 @@ class EmailService {
      */
     generateAccessCodeTextEmail(code, customerName) {
         return `
-🍪 NEXOS COOKIES TOOL
+🍪 Hexzor COOKIES TOOL
 CÓDIGO DE ACCESO
 
 Hola ${customerName},
@@ -234,7 +234,7 @@ Si tienes algún problema para acceder, contacta a nuestro equipo de soporte.
 
 ---
 Este email fue enviado automáticamente. Por favor no respondas a este mensaje.
-© ${new Date().getFullYear()} Nexos Cookies Tool. Todos los derechos reservados.
+© ${new Date().getFullYear()} Hexzor Cookies Tool. Todos los derechos reservados.
         `.trim();
     }
 
@@ -253,7 +253,7 @@ Este email fue enviado automáticamente. Por favor no respondas a este mensaje.
             const mailOptions = {
                 from: `"${this.fromName}" <${this.fromEmail}>`,
                 to: process.env.ADMIN_EMAIL,
-                subject: 'Nuevo acceso a Nexos Cookies Tool',
+                subject: 'Nuevo acceso a Hexzor Cookies Tool',
                 text: `
 Nuevo acceso detectado:
 

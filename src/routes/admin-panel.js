@@ -52,7 +52,7 @@ router.get('/login', (req, res) => {
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Login Administrativo - Nexos Cookies Tool</title>
+    <title>Login Administrativo - Hexzor Cookies Tool</title>
     <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" rel="stylesheet">
     <style>
         * {
@@ -169,7 +169,7 @@ router.get('/login', (req, res) => {
     <div class="login-container">
         <div class="login-header">
             <h1><i class="fas fa-shield-alt"></i> Acceso Administrativo</h1>
-            <p>Panel de Control - Nexos Cookies Tool</p>
+            <p>Panel de Control - Hexzor Cookies Tool</p>
         </div>
 
         <div id="alertContainer"></div>
