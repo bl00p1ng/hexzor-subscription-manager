@@ -327,79 +327,107 @@ router.post('/verify-code',
 );
 
 /**
- * POST /api/auth/validate-token
- * Valida token de sesión (para la app principal)
+ * Valida un token guardado y verifica el estado de la suscripción
+ * Endpoint: POST /api/auth/validate-token
  */
-router.post('/validate-token',
-    [
-        body('token')
-            .isString()
-            .isLength({ min: 10 })
-            .withMessage('Token requerido')
-    ],
-    async (req, res) => {
-        try {
-            const errors = validationResult(req);
-            if (!errors.isEmpty()) {
-                return res.status(400).json({
-                    success: false,
-                    error: 'Token requerido'
-                });
-            }
-
-            const { token } = req.body;
-
-            // Verificar token JWT
-            const decoded = jwt.verify(token, process.env.JWT_SECRET);
-            
-            // Si es token de usuario, verificar suscripción activa
-            if (decoded.role === 'user') {
-                const { db } = req.app.locals;
-                const subscription = await db.checkActiveSubscription(decoded.email);
-                
-                if (!subscription) {
-                    return res.status(403).json({
-                        success: false,
-                        error: 'Suscripción expirada'
-                    });
-                }
-            }
-
-            res.json({
-                success: true,
-                data: {
-                    valid: true,
-                    user: {
-                        email: decoded.email,
-                        role: decoded.role,
-                        name: decoded.customerName || decoded.name,
-                        subscriptionEnd: decoded.subscriptionEnd
-                    }
-                }
-            });
-
-        } catch (error) {
-            if (error.name === 'TokenExpiredError') {
-                return res.status(401).json({
-                    success: false,
-                    error: 'Token expirado'
-                });
-            }
-            
-            if (error.name === 'JsonWebTokenError') {
-                return res.status(401).json({
-                    success: false,
-                    error: 'Token inválido'
-                });
-            }
-
-            console.error('Error validando token:', error.message);
-            res.status(500).json({
+router.post('/validate-token', [
+    body('token').notEmpty().withMessage('Token es requerido'),
+    body('email').isEmail().withMessage('Email válido es requerido')
+], async (req, res) => {
+    try {
+        // Validar errores de entrada
+        const errors = validationResult(req);
+        if (!errors.isEmpty()) {
+            return res.status(400).json({
                 success: false,
-                error: 'Error interno del servidor'
+                error: 'Datos inválidos',
+                details: errors.array()
             });
         }
+
+        const { token, email } = req.body;
+
+        // Verificar el token JWT
+        let decoded;
+        try {
+            decoded = jwt.verify(token, process.env.JWT_SECRET);
+        } catch (jwtError) {
+            return res.status(401).json({
+                success: false,
+                error: 'Token inválido o expirado'
+            });
+        }
+
+        // Verificar que el email del token coincida con el solicitado
+        if (decoded.email !== email) {
+            return res.status(401).json({
+                success: false,
+                error: 'Token no corresponde al email proporcionado'
+            });
+        }
+
+        // Verificar que el token sea del tipo correcto (usuario, no admin)
+        if (decoded.role !== 'user') {
+            return res.status(401).json({
+                success: false,
+                error: 'Tipo de token inválido'
+            });
+        }
+
+        // Verificar que la suscripción siga activa en la base de datos
+        const { db } = req.app.locals;
+        const subscription = await db.checkActiveSubscription(email);
+
+        if (!subscription) {
+            return res.status(401).json({
+                success: false,
+                error: 'Suscripción no activa o expirada'
+            });
+        }
+
+        // Verificar que la fecha de expiración del token aún sea válida
+        const now = new Date();
+        const tokenExpiry = new Date(decoded.exp * 1000); // JWT exp está en segundos
+
+        if (now > tokenExpiry) {
+            return res.status(401).json({
+                success: false,
+                error: 'Token expirado'
+            });
+        }
+
+        // Verificar que la suscripción no haya expirado
+        const subscriptionEnd = new Date(subscription.subscription_end);
+        if (now > subscriptionEnd) {
+            return res.status(401).json({
+                success: false,
+                error: 'Suscripción expirada'
+            });
+        }
+
+        // Token válido y suscripción activa
+        console.log(`✅ Token validado exitosamente para: ${email}`);
+
+        // Retornar información actualizada de la suscripción
+        res.json({
+            success: true,
+            message: 'Token válido',
+            subscription: {
+                customerId: subscription.customer_id,
+                customerName: subscription.customer_name,
+                subscriptionEnd: subscription.subscription_end,
+                subscriptionStatus: 'active'
+            },
+            tokenExpiry: tokenExpiry.toISOString()
+        });
+
+    } catch (error) {
+        console.error('Error validando token:', error.message);
+        res.status(500).json({
+            success: false,
+            error: 'Error interno del servidor'
+        });
     }
-);
+});
 
 export default router;
