@@ -63,7 +63,7 @@ router.get('/login', (req, res) => {
 
         body {
             font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            background-color: #2762ea;
             min-height: 100vh;
             display: flex;
             align-items: center;
@@ -117,11 +117,11 @@ router.get('/login', (req, res) => {
 
         .form-group input:focus {
             outline: none;
-            border-color: #667eea;
+            border-color: #2762ea;
         }
 
         .btn {
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            background-color: #2762ea;
             color: white;
             border: none;
             padding: 12px 24px;
@@ -321,7 +321,7 @@ function generateDashboardHTML(admin, stats) {
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Dashboard - Panel Administrativo</title>
+    <title>Hexzor - Panel Administrativo</title>
     <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" rel="stylesheet">
     <style>
         ${getSharedCSS()}
@@ -332,6 +332,8 @@ function generateDashboardHTML(admin, stats) {
     
     <div class="container">
         <h1><i class="fas fa-chart-line"></i> Dashboard</h1>
+
+        <br>
         
         <div class="stats-grid">
             <div class="stat-card">
@@ -354,6 +356,9 @@ function generateDashboardHTML(admin, stats) {
 
         <div class="recent-activity">
             <h2>Actividad Reciente</h2>
+
+            <br>
+
             <div class="activity-list">
                 ${stats.recentActivity.last24Hours.map(activity => `
                     <div class="activity-item">
@@ -391,10 +396,11 @@ function generateSubscriptionsHTML(admin, subscriptionsData) {
     ${getHeaderHTML(admin, 'subscriptions')}
     
     <div class="container">
-        <h1><i class="fas fa-users"></i> Gestión de Suscripciones</h1>
-        
+        <h1 class="mb"><i class="fas fa-users"></i> Gestión de Suscripciones</h1>
+
         <div class="subscription-form">
-            <h2>Agregar Nueva Suscripción</h2>
+            <h2 class="mb">Agregar Nueva Suscripción</h2>
+
             <form id="newSubscriptionForm">
                 <div class="form-row">
                     <div class="form-group">
@@ -416,9 +422,12 @@ function generateSubscriptionsHTML(admin, subscriptionsData) {
                         <input type="date" name="endDate" required>
                     </div>
                 </div>
-                <button type="submit" class="btn">Agregar Suscripción</button>
+                <button type="submit" class="btn mb">Agregar Suscripción</button>
             </form>
         </div>
+
+
+        <h2 class="mb">Suscripciones Existentes</h2>
 
         <div class="subscriptions-table">
             <table>
@@ -441,7 +450,7 @@ function generateSubscriptionsHTML(admin, subscriptionsData) {
                             <td>${new Date(sub.end_date).toLocaleDateString()}</td>
                             <td><span class="status-${sub.status}">${sub.status}</span></td>
                             <td>
-                                <button onclick="expireSubscription('${sub.id}')" class="btn-small">Expirar</button>
+                                <button onclick="expireSubscription('${sub.id}')" class="btn">Expirar</button>
                             </td>
                         </tr>
                     `).join('')}
@@ -559,7 +568,7 @@ function getSharedCSS() {
     return `
         * { margin: 0; padding: 0; box-sizing: border-box; }
         body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background: #f5f5f5; }
-        .header { background: #667eea; color: white; padding: 1rem 0; margin-bottom: 2rem; }
+        .header { background: #2762ea; color: white; padding: 1rem 0; margin-bottom: 2rem; }
         .header-content { max-width: 1200px; margin: 0 auto; display: flex; justify-content: space-between; align-items: center; padding: 0 1rem; }
         .nav { display: flex; gap: 1rem; }
         .nav a { color: white; text-decoration: none; padding: 0.5rem 1rem; border-radius: 4px; }
@@ -567,8 +576,8 @@ function getSharedCSS() {
         .container { max-width: 1200px; margin: 0 auto; padding: 0 1rem; }
         .stats-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 1rem; margin-bottom: 2rem; }
         .stat-card { background: white; padding: 1.5rem; border-radius: 8px; text-align: center; box-shadow: 0 2px 4px rgba(0,0,0,0.1); }
-        .stat-card h3 { font-size: 2rem; color: #667eea; margin-bottom: 0.5rem; }
-        .btn { background: #667eea; color: white; border: none; padding: 0.75rem 1.5rem; border-radius: 4px; cursor: pointer; }
+        .stat-card h3 { font-size: 2rem; color: #2762ea; margin-bottom: 0.5rem; }
+        .btn { background: #2762ea; color: white; border: none; padding: 0.75rem 1.5rem; border-radius: 4px; cursor: pointer; }
         .btn:hover { background: #5a67d8; }
         .form-group { margin-bottom: 1rem; }
         .form-group label { display: block; margin-bottom: 0.25rem; font-weight: 500; }
@@ -576,6 +585,7 @@ function getSharedCSS() {
         table { width: 100%; background: white; border-radius: 8px; overflow: hidden; box-shadow: 0 2px 4px rgba(0,0,0,0.1); }
         th, td { padding: 1rem; text-align: left; border-bottom: 1px solid #eee; }
         th { background: #f8f9fa; font-weight: 600; }
+        .mb { display: inline-block; margin-bottom: 24px; }
     `;
 }
 
@@ -586,15 +596,13 @@ function getHeaderHTML(admin, currentPage) {
     return `
         <div class="header">
             <div class="header-content">
-                <h1><i class="fas fa-cookie-bite"></i> Panel Administrativo</h1>
+                <h1><i class="fas fa-cookie-bite"></i> Hexzor Admin</h1>
                 <nav class="nav">
                     <a href="/admin/dashboard" ${currentPage === 'dashboard' ? 'class="active"' : ''}>Dashboard</a>
                     <a href="/admin/subscriptions" ${currentPage === 'subscriptions' ? 'class="active"' : ''}>Suscripciones</a>
                     <a href="/admin/logs" ${currentPage === 'logs' ? 'class="active"' : ''}>Logs</a>
-                    <span>|</span>
-                    <span>${admin.name}</span>
                     <form method="POST" action="/admin/logout" style="display: inline;">
-                        <button type="submit" style="background: none; border: none; color: white; cursor: pointer;">
+                        <button type="submit" style="background: none; border: none; color: white; cursor: pointer; padding: 0.5rem 1rem;">
                             <i class="fas fa-sign-out-alt"></i> Salir
                         </button>
                     </form>
@@ -619,7 +627,7 @@ function generateLogsHTML(admin, logs) {
 <body>
     ${getHeaderHTML(admin, 'logs')}
     <div class="container">
-        <h1>Logs del Sistema</h1>
+        <h1 class="mb">Logs del Sistema</h1>
         <table>
             <thead>
                 <tr><th>Fecha</th><th>Email</th><th>Acción</th><th>IP</th><th>Estado</th></tr>
