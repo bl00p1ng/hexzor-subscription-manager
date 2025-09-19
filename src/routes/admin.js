@@ -258,9 +258,9 @@ router.put('/subscriptions/:id',
             updateValues.push(subscriptionId);
 
             const query = `UPDATE active_subscriptions SET ${updateFields.join(', ')} WHERE id = ?`;
-            const result = await db.runQuery(query, updateValues);
+            const result = await db.query(query, updateValues);
 
-            if (result.changes === 0) {
+            if (result.rowCount === 0) {
                 return res.status(404).json({
                     success: false,
                     error: 'Suscripción no encontrada'
@@ -302,12 +302,12 @@ router.delete('/subscriptions/:id', async (req, res) => {
         const { db } = req.app.locals;
 
         // Cambiar estado a expirada en lugar de eliminar
-        const result = await db.runQuery(
-            'UPDATE active_subscriptions SET status = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?',
+        const result = await db.query(
+            'UPDATE active_subscriptions SET status = $1, updated_at = CURRENT_TIMESTAMP WHERE id = $2',
             ['expired', subscriptionId]
         );
 
-        if (result.changes === 0) {
+        if (result.rowCount === 0) {
             return res.status(404).json({
                 success: false,
                 error: 'Suscripción no encontrada'
