@@ -17,9 +17,10 @@ class PostgreSQLManager {
             user: process.env.DB_USER || 'Hexzor_user',
             password: process.env.DB_PASSWORD || 'Hexzor_password',
             // Configuración de pool para mejor rendimiento
-            max: 20,                    // Máximo 20 conexiones
+            max: 25,                    // Máximo 20 conexiones
+            min: 5,                     // Mínimo 5 conexiones
             idleTimeoutMillis: 30000,   // 30 segundos timeout
-            connectionTimeoutMillis: 2000, // 2 segundos para conectar
+            connectionTimeoutMillis: 5000, // 5 segundos para conectar
             ssl: process.env.DB_SSL === 'true' ? { rejectUnauthorized: false } : false
         };
     }
