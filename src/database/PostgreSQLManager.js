@@ -13,9 +13,9 @@ class PostgreSQLManager {
         this.config = {
             host: process.env.DB_HOST || 'localhost',
             port: parseInt(process.env.DB_PORT) || 5432,
-            database: process.env.DB_NAME || 'Hexzor_auth',
-            user: process.env.DB_USER || 'Hexzor_user',
-            password: process.env.DB_PASSWORD || 'Hexzor_password',
+            database: process.env.DB_NAME || 'hexzor_auth',
+            user: process.env.DB_USER || 'hexzor_user',
+            password: process.env.DB_PASSWORD || 'hexzor_password',
             // Configuración de pool para mejor rendimiento
             max: 25,                    // Máximo 20 conexiones
             min: 5,                     // Mínimo 5 conexiones
