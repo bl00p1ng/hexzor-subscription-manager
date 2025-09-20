@@ -13,7 +13,7 @@ class PostgreSQLManager {
         this.config = {
             host: process.env.DB_HOST || 'localhost',
             port: parseInt(process.env.DB_PORT) || 5432,
-            database: process.env.DB_NAME || 'hexzor_auth',
+            database: process.env.DB_NAME || 'hexzor_subscriptions',
             user: process.env.DB_USER || 'hexzor_user',
             password: process.env.DB_PASSWORD || 'hexzor_password',
             // Configuración de pool para mejor rendimiento
