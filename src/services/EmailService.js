@@ -170,7 +170,7 @@ class EmailService {
 <body>
     <div class="container">
         <div class="header">
-            <div class="logo">🍪 Hexzor Cookies Tool</div>
+            <div class="logo">Cookies Hexzor</div>
             <h1>Código de Acceso</h1>
             <p>Hola ${customerName},</p>
             <p>Aquí tienes tu código de acceso temporal para ingresar a la aplicación:</p>
@@ -198,7 +198,7 @@ class EmailService {
 
         <div class="footer">
             <p>Este email fue enviado automáticamente. Por favor no respondas a este mensaje.</p>
-            <p>© ${new Date().getFullYear()} Hexzor Cookies Tool. Todos los derechos reservados.</p>
+            <p>© ${new Date().getFullYear()} Cookies Hexzor. Todos los derechos reservados.</p>
         </div>
     </div>
 </body>
@@ -213,7 +213,7 @@ class EmailService {
      */
     generateAccessCodeTextEmail(code, customerName) {
         return `
-🍪 Hexzor COOKIES TOOL
+COOKIES HEXZOR
 CÓDIGO DE ACCESO
 
 Hola ${customerName},
@@ -234,7 +234,7 @@ Si tienes algún problema para acceder, contacta a nuestro equipo de soporte.
 
 ---
 Este email fue enviado automáticamente. Por favor no respondas a este mensaje.
-© ${new Date().getFullYear()} Hexzor Cookies Tool. Todos los derechos reservados.
+© ${new Date().getFullYear()} Cookies Hexzor. Todos los derechos reservados.
         `.trim();
     }
 
@@ -253,7 +253,7 @@ Este email fue enviado automáticamente. Por favor no respondas a este mensaje.
             const mailOptions = {
                 from: `"${this.fromName}" <${this.fromEmail}>`,
                 to: process.env.ADMIN_EMAIL,
-                subject: 'Nuevo acceso a Hexzor Cookies Tool',
+                subject: 'Nuevo acceso a Cookies Hexzor',
                 text: `
 Nuevo acceso detectado:
 
