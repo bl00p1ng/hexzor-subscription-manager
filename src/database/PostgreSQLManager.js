@@ -413,6 +413,109 @@ class PostgreSQLManager {
     }
 
     /**
+     * Verifica si el usuario puede generar un nuevo código de acceso
+     * @param {string} email - Email del usuario
+     * @param {string} deviceFingerprint - Fingerprint del dispositivo
+     * @param {string} sessionToken - Token de sesión actual (si existe)
+     * @returns {Promise<Object>} Resultado de la verificación
+     */
+    async checkAccessCodeEligibility(email, deviceFingerprint, sessionToken = null) {
+        // Buscar códigos activos (no usados y no expirados)
+        const activeCodesQuery = `
+            SELECT code, device_fingerprint, session_token, created_at, expires_at
+            FROM access_codes 
+            WHERE email = $1 
+            AND used_at IS NULL 
+            AND expires_at > NOW()
+            ORDER BY created_at DESC
+        `;
+        
+        const activeCodes = await this.getMany(activeCodesQuery, [email]);
+        
+        if (activeCodes.length === 0) {
+            return { allowed: true, reason: 'no_active_codes' };
+        }
+        
+        const latestCode = activeCodes[0];
+        
+        // Si tiene session token y coincide con el del código existente = renovación
+        if (sessionToken && latestCode.session_token === sessionToken) {
+            return { 
+                allowed: true, 
+                reason: 'session_renewal',
+                existingCode: latestCode.code
+            };
+        }
+        
+        // Si el fingerprint coincide = mismo dispositivo
+        if (latestCode.device_fingerprint === deviceFingerprint) {
+            return { 
+                allowed: true, 
+                reason: 'same_device',
+                existingCode: latestCode.code
+            };
+        }
+        
+        // Diferente dispositivo y no es renovación = bloquear
+        return { 
+            allowed: false, 
+            reason: 'multiple_sessions_blocked',
+            blockedUntil: latestCode.expires_at
+        };
+    }
+
+    /**
+     * Genera código de acceso con control de sesiones
+     */
+    async generateAccessCodeWithSessionControl(email, deviceFingerprint, sessionToken = null) {
+        // Verificar elegibilidad
+        const eligibility = await this.checkAccessCodeEligibility(email, deviceFingerprint, sessionToken);
+        
+        if (!eligibility.allowed) {
+            throw new Error(`MULTIPLE_SESSIONS_BLOCKED:${eligibility.blockedUntil}`);
+        }
+        
+        // Si hay código existente válido, reutilizar
+        if (eligibility.existingCode) {
+            await this.query(
+                'UPDATE access_codes SET created_at = NOW() WHERE email = $1 AND code = $2',
+                [email, eligibility.existingCode]
+            );
+            
+            return {
+                code: eligibility.existingCode,
+                isRenewal: eligibility.reason === 'session_renewal',
+                reason: eligibility.reason
+            };
+        }
+        
+        // Invalidar códigos anteriores
+        await this.query(
+            'UPDATE access_codes SET used_at = NOW() WHERE email = $1 AND used_at IS NULL',
+            [email]
+        );
+        
+        // Generar nuevo código
+        const code = Math.random().toString(36).substring(2, 8).toUpperCase();
+        const expiresAt = new Date(Date.now() + 10 * 60 * 1000); // 10 minutos
+        
+        const newSessionToken = sessionToken || crypto.randomUUID();
+        
+        await this.query(`
+            INSERT INTO access_codes (email, code, expires_at, device_fingerprint, session_token, is_renewal, previous_session_id)
+            VALUES ($1, $2, $3, $4, $5, $6, $7)
+        `, [email, code, expiresAt, deviceFingerprint, newSessionToken, eligibility.reason === 'session_renewal', sessionToken]);
+        
+        return {
+            code,
+            sessionToken: newSessionToken,
+            expiresAt,
+            isRenewal: false,
+            reason: 'new_code_generated'
+        };
+    }
+
+    /**
      * Verifica un código de acceso
      * @param {string} email - Email del usuario
      * @param {string} code - Código a verificar
