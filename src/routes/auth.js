@@ -2,6 +2,7 @@ import express from 'express';
 import jwt from 'jsonwebtoken';
 import rateLimit from 'express-rate-limit';
 import { body, validationResult } from 'express-validator';
+import { captureDeviceFingerprint } from '../middleware/deviceFingerprint.js';
 
 const router = express.Router();
 
@@ -132,6 +133,7 @@ router.post('/admin/login',
  */
 router.post('/request-code',
     codeRequestLimiter,
+    captureDeviceFingerprint,  // Nuevo middleware
     [
         body('email')
             .isEmail()
@@ -151,6 +153,8 @@ router.post('/request-code',
 
             const { email } = req.body;
             const { db, emailService } = req.app.locals;
+            const deviceFingerprint = req.deviceFingerprint;
+            const sessionToken = req.cookies.session_token || null;
 
             // Verificar suscripción activa
             const subscription = await db.checkActiveSubscription(email);
@@ -163,7 +167,8 @@ router.post('/request-code',
                     ipAddress: req.ip,
                     userAgent: req.get('User-Agent'),
                     success: false,
-                    errorMessage: 'Sin suscripción activa'
+                    errorMessage: 'Sin suscripción activa',
+                    metadata: { deviceFingerprint }
                 });
 
                 return res.status(403).json({
@@ -172,19 +177,59 @@ router.post('/request-code',
                 });
             }
 
-            // Generar código de acceso
-            const code = await db.generateAccessCode(
-                email,
-                req.ip,
-                req.get('User-Agent')
-            );
+            // Verificar elegibilidad para generar código
+            let codeResult;
+            try {
+                codeResult = await db.generateAccessCodeWithSessionControl(
+                    email,
+                    deviceFingerprint,
+                    sessionToken
+                );
+            } catch (error) {
+                if (error.message.startsWith('MULTIPLE_SESSIONS_BLOCKED:')) {
+                    const blockedUntil = error.message.split(':')[1];
+                    
+                    // Log bloqueo por sesiones múltiples
+                    await db.logAccess({
+                        email,
+                        action: 'code_request_blocked',
+                        ipAddress: req.ip,
+                        userAgent: req.get('User-Agent'),
+                        success: false,
+                        errorMessage: 'Sesiones múltiples bloqueadas',
+                        metadata: { deviceFingerprint, blockedUntil }
+                    });
 
-            // Enviar código por email
-            const emailSent = await emailService.sendAccessCode(
-                email, 
-                code, 
-                subscription.customer_name
-            );
+                    return res.status(429).json({
+                        success: false,
+                        error: 'Ya existe una sesión activa en otro dispositivo. Espera a que expire el código anterior o cierra la otra sesión.',
+                        code: 'MULTIPLE_SESSIONS_BLOCKED',
+                        blockedUntil: new Date(blockedUntil).toISOString(),
+                        retryAfterMinutes: Math.ceil((new Date(blockedUntil) - new Date()) / (1000 * 60))
+                    });
+                }
+                throw error; // Re-lanzar otros errores
+            }
+
+            // Si no hay código nuevo (reutilización), no enviar email
+            let emailSent = false;
+            if (!codeResult.isRenewal || codeResult.reason === 'new_code_generated') {
+                emailSent = await emailService.sendAccessCode(
+                    email, 
+                    codeResult.code, 
+                    subscription.customer_name
+                );
+            }
+
+            // Configurar cookie de sesión si es nueva sesión
+            if (codeResult.sessionToken && !sessionToken) {
+                res.cookie('session_token', codeResult.sessionToken, {
+                    httpOnly: true,
+                    secure: process.env.NODE_ENV === 'production',
+                    sameSite: 'strict',
+                    maxAge: 30 * 24 * 60 * 60 * 1000 // 30 días
+                });
+            }
 
             // Log solicitud exitosa
             await db.logAccess({
@@ -192,22 +237,52 @@ router.post('/request-code',
                 action: 'code_request_success',
                 ipAddress: req.ip,
                 userAgent: req.get('User-Agent'),
-                success: true
+                success: true,
+                metadata: {
+                    deviceFingerprint,
+                    reason: codeResult.reason,
+                    isRenewal: codeResult.isRenewal,
+                    emailSent
+                }
             });
+
+            // Respuesta personalizada según el tipo de solicitud
+            let message;
+            if (codeResult.isRenewal) {
+                message = 'Código de acceso renovado. Válido por 10 minutos.';
+            } else if (codeResult.reason === 'same_device') {
+                message = 'Código reutilizado del mismo dispositivo. Válido por 10 minutos.';
+            } else {
+                message = emailSent ? 
+                    'Código enviado a tu email. Válido por 10 minutos.' :
+                    'Código generado. Revisa la consola del servidor.';
+            }
 
             res.json({
                 success: true,
-                message: emailSent ? 
-                    'Código enviado a tu email. Válido por 10 minutos.' :
-                    'Código generado. Revisa la consola del servidor.',
+                message,
                 data: {
                     emailSent,
-                    expiresInMinutes: 10
+                    expiresInMinutes: 10,
+                    isRenewal: codeResult.isRenewal,
+                    reason: codeResult.reason
                 }
             });
 
         } catch (error) {
             console.error('Error solicitando código:', error.message);
+            
+            // Log error genérico
+            await req.app.locals.db.logAccess({
+                email: req.body?.email || 'unknown',
+                action: 'code_request_error',
+                ipAddress: req.ip,
+                userAgent: req.get('User-Agent'),
+                success: false,
+                errorMessage: error.message,
+                metadata: { deviceFingerprint: req.deviceFingerprint }
+            }).catch(() => {}); // Ignorar errores de logging
+
             res.status(500).json({
                 success: false,
                 error: 'Error interno del servidor'
@@ -246,8 +321,12 @@ router.post('/verify-code',
             const { email, code } = req.body;
             const { db, emailService } = req.app.locals;
 
+            console.log(`🔑 Verificando código para ${email}: ${code}`);
+
             // Verificar código
             const isValidCode = await db.verifyAccessCode(email, code.toUpperCase());
+
+            console.log(`🔍 Código válido: ${isValidCode}`);
             
             if (!isValidCode) {
                 // Log verificación fallida
