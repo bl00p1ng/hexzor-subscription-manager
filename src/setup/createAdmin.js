@@ -38,9 +38,6 @@ class SetupWizard {
             // Crear administrador inicial
             await this.createInitialAdmin();
 
-            // Verificar configuración de email
-            await this.checkEmailConfiguration();
-
             // Mostrar resumen final
             this.showFinalSummary();
 
