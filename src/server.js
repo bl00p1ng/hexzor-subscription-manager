@@ -13,6 +13,7 @@ import EmailService from './services/EmailService.js';
 import authRoutes from './routes/auth.js';
 import adminRoutes from './routes/admin.js';
 import adminPanelRoutes from './routes/admin-panel.js';
+import { handleExpiredSessions } from './middleware/sessionHandler.js';
 
 // Configuración de variables de entorno
 dotenv.config();
@@ -178,6 +179,7 @@ class AuthServer {
         this.app.use('/api/admin', adminRoutes);
 
         // Rutas del panel de administración
+        this.app.use('/admin', handleExpiredSessions);
         this.app.use('/admin', adminPanelRoutes);
 
         // Ruta para obtener información del servidor

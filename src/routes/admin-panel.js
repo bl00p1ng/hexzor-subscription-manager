@@ -5,7 +5,7 @@ const router = express.Router();
 
 /**
  * Middleware para verificar autenticación en TODAS las rutas del panel
- * Si no está autenticado, redirige al login
+ * Si no está autenticado, redirige al login y limpia cookies
  */
 const requireAdminAuth = async (req, res, next) => {
     try {
@@ -13,25 +13,48 @@ const requireAdminAuth = async (req, res, next) => {
         const token = req.cookies?.adminToken || req.headers.authorization?.replace('Bearer ', '');
         
         if (!token) {
-            // No hay token, mostrar página de login
+            // No hay token, limpiar cookies y redirigir
+            res.clearCookie('adminToken');
             return res.redirect('/admin/login');
         }
 
-        // Verificar token usando el middleware existente
-        req.headers.authorization = `Bearer ${token}`;
-        
-        // Usar el middleware de autenticación
-        authenticateAdmin(req, res, (error) => {
-            if (error || !req.admin) {
-                // Token inválido, limpiar cookie y redirigir
+        // Crear un objeto de respuesta simulado para capturar errores del middleware
+        const mockRes = {
+            status: () => mockRes,
+            json: (data) => {
+                // Si el middleware retorna error, limpiar cookie y redirigir
                 res.clearCookie('adminToken');
                 return res.redirect('/admin/login');
             }
+        };
+
+        // Configurar el header de autorización
+        req.headers.authorization = `Bearer ${token}`;
+        
+        // Ejecutar el middleware de autenticación
+        authenticateAdmin(req, mockRes, (error) => {
+            if (error || !req.admin) {
+                // Token inválido o expirado, limpiar cookie y redirigir
+                res.clearCookie('adminToken', {
+                    path: '/',
+                    httpOnly: true,
+                    secure: process.env.NODE_ENV === 'production',
+                    sameSite: 'strict'
+                });
+                return res.redirect('/admin/login');
+            }
+            // Token válido, continuar
             next();
         });
 
     } catch (error) {
-        res.clearCookie('adminToken');
+        console.error('Error en requireAdminAuth:', error);
+        res.clearCookie('adminToken', {
+            path: '/',
+            httpOnly: true, 
+            secure: process.env.NODE_ENV === 'production',
+            sameSite: 'strict'
+        });
         return res.redirect('/admin/login');
     }
 };
@@ -40,10 +63,26 @@ const requireAdminAuth = async (req, res, next) => {
  * GET /admin/login
  * Página de login de administradores (única página pública)
  */
-router.get('/login', (req, res) => {
-    // Si ya está logueado, redirigir al dashboard
+router.get('/login', async (req, res) => {
+    // Verificar si el token actual es válido antes de redirigir
     if (req.cookies?.adminToken) {
-        return res.redirect('/admin/dashboard');
+        try {
+            // Verificar token de manera simple
+            const jwt = await import('jsonwebtoken');
+            const decoded = jwt.default.verify(req.cookies.adminToken, process.env.JWT_SECRET);
+            
+            if (decoded && decoded.role === 'admin') {
+                return res.redirect('/admin/dashboard');
+            }
+        } catch (error) {
+            // Token inválido, limpiar cookie
+            res.clearCookie('adminToken', {
+                path: '/',
+                httpOnly: true,
+                secure: process.env.NODE_ENV === 'production', 
+                sameSite: 'strict'
+            });
+        }
     }
 
     res.send(`
