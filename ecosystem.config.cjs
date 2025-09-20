@@ -2,7 +2,7 @@
  * Configuración de PM2 para Hexzor Subscription Manager
  * Este archivo define la aplicación en producción con PM2
  */
-export default {
+module.exports = {
     apps: [{
         // Identificación de la aplicación
         name: 'hexzor-subscription-manager',
