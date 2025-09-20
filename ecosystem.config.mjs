@@ -6,7 +6,7 @@ export default {
     apps: [{
         // Identificación de la aplicación
         name: 'hexzor-subscription-manager',
-        script: './src/server.js',
+        script: 'src/server.js',
         
         // Configuración de ejecución
         instances: 1, // Usar 1 instancia para evitar problemas con sesiones
