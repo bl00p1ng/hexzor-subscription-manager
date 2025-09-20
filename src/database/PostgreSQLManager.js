@@ -179,6 +179,21 @@ class PostgreSQLManager {
             await client.query('COMMIT');
             console.log('✅ Tablas e índices creados correctamente');
 
+            await client.query(`
+                ALTER TABLE access_codes 
+                ADD COLUMN IF NOT EXISTS device_fingerprint TEXT,
+                ADD COLUMN IF NOT EXISTS session_token TEXT,
+                ADD COLUMN IF NOT EXISTS is_renewal BOOLEAN DEFAULT FALSE,
+                ADD COLUMN IF NOT EXISTS previous_session_id TEXT
+            `);
+            
+            await client.query(`
+                CREATE INDEX IF NOT EXISTS idx_access_codes_email_active 
+                ON access_codes(email) 
+                WHERE used_at IS NULL
+            `);
+            
+            console.log('✅ Auto-migración: Control de sesiones aplicada');
         } catch (error) {
             await client.query('ROLLBACK');
             console.error('❌ Error creando tablas:', error.message);
