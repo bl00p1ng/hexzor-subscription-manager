@@ -2,7 +2,6 @@
 
 # ========================================
 # Script de Gestión Simple - Nexos Subscription Manager
-# Sin PM2, usando systemd directamente
 # ========================================
 
 SERVICE_NAME="nexos-subscription"
@@ -35,11 +34,14 @@ show_help() {
     echo "  backup      - Crear backup de BD"
     echo "  install     - Instalar servicio systemd"
     echo "  test        - Probar aplicación localmente"
+    echo "  ngrok-start - Iniciar túnel ngrok en segundo plano"
+    echo "  ngrok-stop  - Detener túnel ngrok"
+    echo "  ngrok-url   - Mostrar URL de ngrok"
     echo ""
     echo "Ejemplos:"
     echo "  $0 start"
-    echo "  $0 logs"
-    echo "  $0 update"
+    echo "  $0 ngrok-start"
+    echo "  $0 ngrok-url"
     echo ""
 }
 
@@ -334,8 +336,98 @@ EOF
     fi
 }
 
-# Probar aplicación localmente
-test_app() {
+# Iniciar túnel ngrok en segundo plano
+start_ngrok() {
+    print_info "Iniciando túnel ngrok..."
+    
+    # Verificar que ngrok existe
+    if [ ! -f "./ngrok" ]; then
+        print_error "ngrok no encontrado en el directorio actual"
+        print_info "Descárgalo con:"
+        print_info "wget https://bin.equinox.io/c/4VmDzA7iaHb/ngrok-stable-linux-amd64.zip"
+        print_info "unzip ngrok-stable-linux-amd64.zip"
+        exit 1
+    fi
+    
+    # Verificar si ya está corriendo
+    if pgrep -f "ngrok http" > /dev/null; then
+        print_warning "ngrok ya está corriendo"
+        get_ngrok_url
+        exit 0
+    fi
+    
+    # Verificar que la aplicación esté corriendo
+    if ! systemctl is-active "$SERVICE_NAME" >/dev/null 2>&1; then
+        print_warning "La aplicación no está corriendo. Iniciándola..."
+        start_service
+        sleep 3
+    fi
+    
+    # Iniciar ngrok en segundo plano
+    print_info "Iniciando ngrok en puerto 3001..."
+    nohup ./ngrok http 3001 > ngrok.log 2>&1 &
+    
+    # Esperar que inicie
+    sleep 5
+    
+    # Verificar que está corriendo y obtener URL
+    if pgrep -f "ngrok http" > /dev/null; then
+        print_success "ngrok iniciado correctamente"
+        get_ngrok_url
+    else
+        print_error "Error al iniciar ngrok"
+        print_info "Revisa el log: tail ngrok.log"
+        exit 1
+    fi
+}
+
+# Detener túnel ngrok
+stop_ngrok() {
+    print_info "Deteniendo túnel ngrok..."
+    
+    if pgrep -f "ngrok http" > /dev/null; then
+        pkill -f "ngrok http"
+        print_success "ngrok detenido"
+    else
+        print_warning "ngrok no está corriendo"
+    fi
+}
+
+# Obtener URL de ngrok
+get_ngrok_url() {
+    if ! pgrep -f "ngrok http" > /dev/null; then
+        print_error "ngrok no está corriendo"
+        print_info "Inicia con: $0 ngrok-start"
+        exit 1
+    fi
+    
+    print_info "Obteniendo URL de ngrok..."
+    
+    # Intentar obtener URL desde la API local de ngrok
+    local url=""
+    for i in {1..10}; do
+        url=$(curl -s http://localhost:4040/api/tunnels 2>/dev/null | grep -o 'https://[^"]*ngrok.io' | head -1)
+        if [ -n "$url" ]; then
+            break
+        fi
+        sleep 1
+    done
+    
+    if [ -n "$url" ]; then
+        echo ""
+        print_success "🌐 URLs de acceso:"
+        echo "  • Panel Admin: ${url}/admin/login"
+        echo "  • API Health: ${url}/health"
+        echo "  • API Base: ${url}/api/"
+        echo ""
+        print_info "💡 Usa esta URL en tu aplicación Electron:"
+        echo "  const API_BASE = '${url}';"
+        echo ""
+    else
+        print_error "No se pudo obtener la URL de ngrok"
+        print_info "Revisa manualmente en: http://localhost:4040"
+    fi
+}
     print_info "Probando aplicación localmente..."
     
     if [ ! -f "src/server.js" ]; then
@@ -396,6 +488,15 @@ case "${1}" in
         ;;
     test)
         test_app
+        ;;
+    ngrok-start)
+        start_ngrok
+        ;;
+    ngrok-stop)
+        stop_ngrok
+        ;;
+    ngrok-url)
+        get_ngrok_url
         ;;
     help|--help|-h)
         show_help
