@@ -133,7 +133,7 @@ router.post('/admin/login',
  */
 router.post('/request-code',
     codeRequestLimiter,
-    captureDeviceFingerprint,  // Nuevo middleware
+    captureDeviceFingerprint,
     [
         body('email')
             .isEmail()
@@ -297,13 +297,14 @@ router.post('/request-code',
  */
 router.post('/verify-code',
     codeVerifyLimiter,
+    captureDeviceFingerprint,
     [
         body('email')
             .isEmail()
             .normalizeEmail()
             .withMessage('Email válido requerido'),
         body('code')
-            .isLength({ min: 8, max: 8 })
+            .isLength({ min: 6, max: 8 })
             .isAlphanumeric()
             .withMessage('Código inválido')
     ],
