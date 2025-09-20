@@ -16,8 +16,8 @@ NC='\033[0m' # No Color
 
 # Variables de configuración
 APP_NAME="hexzor-subscription-manager"
-APP_DIR="/var/www/${APP_NAME}"
-SERVICE_USER="ubuntu"
+APP_DIR="/home/dev/apps/backend/${APP_NAME}"
+SERVICE_USER="dev"
 DB_NAME="hexzor_subscriptions"
 DB_USER="hexzor_user"
 BACKUP_DIR="/var/backups/${APP_NAME}"

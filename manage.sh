@@ -6,7 +6,7 @@
 # ========================================
 
 APP_NAME="hexzor-subscription-manager"
-APP_DIR="/var/www/${APP_NAME}"
+APP_DIR="/home/dev/apps/backend/${APP_NAME}"
 
 # Colores
 RED='\033[0;31m'
