@@ -1,5 +1,5 @@
 {
-    "name": "Hexzor-subscription-manager",
+    "name": "hexzor-subscription-manager",
     "version": "1.0.0",
     "description": "Sistema de autenticación y gestión de suscripciones para Hexzor Cookies Tool",
     "main": "src/server.js",
