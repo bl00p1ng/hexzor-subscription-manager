@@ -1,459 +1,409 @@
 #!/bin/bash
 
 # ========================================
-# Script de Gestión - Hexzor Subscription Manager
-# Comandos útiles para administrar la aplicación
+# Script de Gestión Simple - Nexos Subscription Manager
+# Sin PM2, usando systemd directamente
 # ========================================
 
-APP_NAME="hexzor-subscription-manager"
-APP_DIR="/home/dev/apps/backend/${APP_NAME}"
+SERVICE_NAME="nexos-subscription"
+APP_DIR="$(pwd)"
+DB_NAME="hexzor_subscriptions"
+DB_USER="hexzor_user"
 
-# Colores
+# Colores para mensajes
 RED='\033[0;31m'
 GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
 BLUE='\033[0;34m'
 NC='\033[0m'
 
-print_help() {
-    echo "======================================"
-    echo "Gestión de Hexzor Subscription Manager"
-    echo "======================================"
-    echo ""
-    echo "Uso: $0 [comando]"
+# Función para mostrar ayuda
+show_help() {
+    echo "======================================="
+    echo "Gestión de Nexos Subscription Manager"
+    echo "======================================="
     echo ""
     echo "Comandos disponibles:"
-    echo "  status      - Ver estado de la aplicación"
-    echo "  logs        - Ver logs en tiempo real"
-    echo "  restart     - Reiniciar aplicación"
-    echo "  stop        - Detener aplicación"
     echo "  start       - Iniciar aplicación"
-    echo "  update      - Actualizar desde Git y reiniciar"
-    echo "  backup      - Crear backup de la base de datos"
-    echo "  restore     - Restaurar backup (requiere archivo)"
-    echo "  env         - Editar variables de entorno"
-    echo "  admin       - Crear nuevo administrador"
-    echo "  health      - Verificar salud del sistema"
-    echo "  ip          - Mostrar URLs de acceso"
+    echo "  stop        - Detener aplicación"
+    echo "  restart     - Reiniciar aplicación"
+    echo "  status      - Ver estado del servicio"
+    echo "  logs        - Ver logs en tiempo real"
+    echo "  enable      - Habilitar inicio automático"
+    echo "  disable     - Deshabilitar inicio automático"
+    echo "  update      - Actualizar desde Git"
+    echo "  backup      - Crear backup de BD"
+    echo "  install     - Instalar servicio systemd"
+    echo "  test        - Probar aplicación localmente"
     echo ""
     echo "Ejemplos:"
-    echo "  $0 status          # Ver estado"
-    echo "  $0 logs            # Ver logs"
-    echo "  $0 update          # Actualizar app"
-    echo "  $0 restore backup.sql  # Restaurar BD"
+    echo "  $0 start"
+    echo "  $0 logs"
+    echo "  $0 update"
     echo ""
 }
 
-print_status() {
+# Función para mensajes con colores
+print_info() {
     echo -e "${BLUE}[INFO]${NC} $1"
 }
 
 print_success() {
-    echo -e "${GREEN}[✓]${NC} $1"
+    echo -e "${GREEN}[OK]${NC} $1"
 }
 
 print_error() {
-    echo -e "${RED}[✗]${NC} $1"
+    echo -e "${RED}[ERROR]${NC} $1"
 }
 
 print_warning() {
-    echo -e "${YELLOW}[!]${NC} $1"
+    echo -e "${YELLOW}[WARN]${NC} $1"
 }
 
-check_app_dir() {
-    if [ ! -d "$APP_DIR" ]; then
-        print_error "Directorio de la aplicación no encontrado: $APP_DIR"
+# Función para verificar si el servicio existe
+service_exists() {
+    systemctl list-unit-files | grep -q "^${SERVICE_NAME}.service"
+}
+
+# Función para verificar si el usuario tiene permisos sudo
+check_sudo() {
+    if ! sudo -n true 2>/dev/null; then
+        print_error "Este comando requiere permisos sudo"
         exit 1
     fi
 }
 
+# Iniciar servicio
+start_service() {
+    print_info "Iniciando servicio ${SERVICE_NAME}..."
+    
+    if ! service_exists; then
+        print_error "Servicio no instalado. Ejecuta: $0 install"
+        exit 1
+    fi
+    
+    check_sudo
+    
+    if sudo systemctl start "$SERVICE_NAME"; then
+        print_success "Servicio iniciado correctamente"
+        sleep 2
+        sudo systemctl status "$SERVICE_NAME" --no-pager -l
+    else
+        print_error "Error al iniciar el servicio"
+        exit 1
+    fi
+}
+
+# Detener servicio
+stop_service() {
+    print_info "Deteniendo servicio ${SERVICE_NAME}..."
+    check_sudo
+    
+    if sudo systemctl stop "$SERVICE_NAME"; then
+        print_success "Servicio detenido"
+    else
+        print_error "Error al detener el servicio"
+        exit 1
+    fi
+}
+
+# Reiniciar servicio
+restart_service() {
+    print_info "Reiniciando servicio ${SERVICE_NAME}..."
+    check_sudo
+    
+    if sudo systemctl restart "$SERVICE_NAME"; then
+        print_success "Servicio reiniciado correctamente"
+        sleep 2
+        sudo systemctl status "$SERVICE_NAME" --no-pager -l
+    else
+        print_error "Error al reiniciar el servicio"
+        exit 1
+    fi
+}
+
+# Ver estado del servicio
 show_status() {
-    print_status "Estado de la aplicación:"
-    pm2 status "$APP_NAME"
+    print_info "Estado del servicio ${SERVICE_NAME}:"
     echo ""
     
-    print_status "Uso de recursos:"
-    pm2 show "$APP_NAME" 2>/dev/null | grep -E "(cpu|memory|uptime|restarts)"
-    echo ""
-    
-    print_status "Últimas líneas del log:"
-    pm2 logs "$APP_NAME" --lines 5 --nostream
+    if service_exists; then
+        sudo systemctl status "$SERVICE_NAME" --no-pager -l
+        echo ""
+        
+        # Mostrar si está habilitado para inicio automático
+        if systemctl is-enabled "$SERVICE_NAME" >/dev/null 2>&1; then
+            print_success "Servicio habilitado para inicio automático"
+        else
+            print_warning "Servicio NO habilitado para inicio automático"
+        fi
+        
+        # Mostrar puerto si está activo
+        if systemctl is-active "$SERVICE_NAME" >/dev/null 2>&1; then
+            echo ""
+            print_info "Verificando puerto 3001:"
+            if netstat -tlnp 2>/dev/null | grep -q ":3001 "; then
+                print_success "Aplicación escuchando en puerto 3001"
+                local ip=$(curl -s ifconfig.me 2>/dev/null || echo "TU_IP")
+                echo "  • API: http://${ip}:3001"
+                echo "  • Admin: http://${ip}:3001/admin"
+            else
+                print_warning "Puerto 3001 no está en uso"
+            fi
+        fi
+    else
+        print_error "Servicio no está instalado"
+        echo "Ejecuta: $0 install"
+    fi
 }
 
+# Ver logs en tiempo real
 show_logs() {
-    print_status "Mostrando logs en tiempo real (Ctrl+C para salir):"
-    pm2 logs "$APP_NAME" --lines 50
+    if ! service_exists; then
+        print_error "Servicio no instalado"
+        exit 1
+    fi
+    
+    print_info "Mostrando logs en tiempo real (Ctrl+C para salir):"
+    sudo journalctl -f -u "$SERVICE_NAME"
 }
 
-restart_app() {
-    print_status "Reiniciando aplicación..."
-    pm2 restart "$APP_NAME"
+# Habilitar inicio automático
+enable_service() {
+    print_info "Habilitando inicio automático..."
+    check_sudo
     
-    if [ $? -eq 0 ]; then
-        print_success "Aplicación reiniciada"
-        sleep 2
-        show_status
+    if sudo systemctl enable "$SERVICE_NAME"; then
+        print_success "Servicio habilitado para inicio automático"
     else
-        print_error "Error al reiniciar la aplicación"
+        print_error "Error al habilitar el servicio"
         exit 1
     fi
 }
 
-stop_app() {
-    print_status "Deteniendo aplicación..."
-    pm2 stop "$APP_NAME"
+# Deshabilitar inicio automático
+disable_service() {
+    print_info "Deshabilitando inicio automático..."
+    check_sudo
     
-    if [ $? -eq 0 ]; then
-        print_success "Aplicación detenida"
+    if sudo systemctl disable "$SERVICE_NAME"; then
+        print_success "Servicio deshabilitado"
     else
-        print_error "Error al detener la aplicación"
+        print_error "Error al deshabilitar el servicio"
         exit 1
     fi
 }
 
-start_app() {
-    print_status "Iniciando aplicación..."
-    cd "$APP_DIR"
-    pm2 start ecosystem.config.js --env production
-    
-    if [ $? -eq 0 ]; then
-        print_success "Aplicación iniciada"
-        sleep 2
-        show_status
-    else
-        print_error "Error al iniciar la aplicación"
-        exit 1
-    fi
-}
-
+# Actualizar aplicación desde Git
 update_app() {
-    check_app_dir
+    print_info "Actualizando aplicación desde Git..."
     
-    print_status "Actualizando aplicación desde Git..."
-    cd "$APP_DIR"
-    
-    # Verificar que hay cambios
-    git fetch origin
-    
-    if git diff HEAD origin/main --quiet; then
-        print_success "La aplicación ya está actualizada"
-        return 0
+    # Verificar que estamos en un repositorio Git
+    if [ ! -d ".git" ]; then
+        print_error "Este directorio no es un repositorio Git"
+        exit 1
     fi
     
-    # Hacer backup antes de actualizar
-    backup_database
+    # Crear backup antes de actualizar
+    if service_exists && systemctl is-active "$SERVICE_NAME" >/dev/null 2>&1; then
+        backup_database
+    fi
     
-    # Detener aplicación
-    print_status "Deteniendo aplicación para actualización..."
-    pm2 stop "$APP_NAME" 2>/dev/null || true
+    # Detener servicio si está corriendo
+    if service_exists && systemctl is-active "$SERVICE_NAME" >/dev/null 2>&1; then
+        print_info "Deteniendo servicio para actualización..."
+        sudo systemctl stop "$SERVICE_NAME"
+    fi
     
-    # Actualizar código
-    print_status "Descargando últimos cambios..."
-    git reset --hard origin/main
-    git clean -fd
+    # Hacer pull de Git
+    print_info "Descargando cambios..."
+    if git pull origin main; then
+        print_success "Código actualizado"
+    else
+        print_error "Error al actualizar código"
+        # Intentar reiniciar con versión anterior
+        if service_exists; then
+            sudo systemctl start "$SERVICE_NAME"
+        fi
+        exit 1
+    fi
     
     # Instalar dependencias
-    print_status "Actualizando dependencias..."
-    npm ci --production --silent
+    print_info "Instalando dependencias..."
+    if npm install; then
+        print_success "Dependencias instaladas"
+    else
+        print_error "Error al instalar dependencias"
+        exit 1
+    fi
     
-    # Reiniciar aplicación
-    print_status "Reiniciando aplicación..."
-    pm2 start ecosystem.config.js --env production
-    
-    if [ $? -eq 0 ]; then
+    # Reiniciar servicio
+    if service_exists; then
+        print_info "Reiniciando servicio..."
+        sudo systemctl start "$SERVICE_NAME"
         print_success "Aplicación actualizada y reiniciada"
-        sleep 3
-        show_status
     else
-        print_error "Error al reiniciar tras actualización"
-        exit 1
+        print_success "Aplicación actualizada (servicio no instalado)"
     fi
 }
 
+# Crear backup de base de datos
 backup_database() {
-    DB_NAME="hexzor_subscriptions"
-    BACKUP_DIR="/var/backups/${APP_NAME}"
-    BACKUP_FILE="${BACKUP_DIR}/backup_$(date +%Y%m%d_%H%M%S).sql"
+    print_info "Creando backup de base de datos..."
     
-    print_status "Creando backup de la base de datos..."
+    local backup_dir="./backups"
+    local backup_file="${backup_dir}/nexos_backup_$(date +%Y%m%d_%H%M%S).sql"
     
-    mkdir -p "$BACKUP_DIR"
+    # Crear directorio de backups si no existe
+    mkdir -p "$backup_dir"
     
-    if sudo -u postgres pg_dump "$DB_NAME" > "$BACKUP_FILE" 2>/dev/null; then
-        print_success "Backup creado: $BACKUP_FILE"
+    # Verificar que PostgreSQL está disponible
+    if ! command -v pg_dump >/dev/null 2>&1; then
+        print_error "pg_dump no está disponible"
+        exit 1
+    fi
+    
+    # Crear backup
+    if pg_dump -h localhost -U "$DB_USER" "$DB_NAME" > "$backup_file" 2>/dev/null; then
+        print_success "Backup creado: $backup_file"
         
-        # Mantener solo los últimos 10 backups
-        ls -t "${BACKUP_DIR}"/backup_*.sql | tail -n +11 | xargs -r rm
-        print_status "Backups antiguos limpiados (manteniendo 10)"
-    else
-        print_error "Error al crear backup de la base de datos"
-        exit 1
-    fi
-}
-
-restore_database() {
-    local backup_file="$1"
-    DB_NAME="hexzor_subscriptions"
-    
-    if [ -z "$backup_file" ]; then
-        print_error "Debe especificar el archivo de backup"
-        echo "Uso: $0 restore /ruta/al/backup.sql"
-        exit 1
-    fi
-    
-    if [ ! -f "$backup_file" ]; then
-        print_error "Archivo de backup no encontrado: $backup_file"
-        exit 1
-    fi
-    
-    print_warning "⚠️  Esta operación sobrescribirá la base de datos actual"
-    read -p "¿Continuar? (y/N): " -n 1 -r
-    echo
-    
-    if [[ ! $REPLY =~ ^[Yy]$ ]]; then
-        print_status "Operación cancelada"
-        exit 0
-    fi
-    
-    # Crear backup actual antes de restaurar
-    backup_database
-    
-    print_status "Restaurando base de datos desde: $backup_file"
-    
-    # Detener aplicación
-    pm2 stop "$APP_NAME" 2>/dev/null || true
-    
-    # Restaurar
-    if sudo -u postgres psql "$DB_NAME" < "$backup_file" 2>/dev/null; then
-        print_success "Base de datos restaurada"
+        # Comprimir si es grande (>10MB)
+        if [ $(stat --format=%s "$backup_file" 2>/dev/null || echo 0) -gt 10485760 ]; then
+            gzip "$backup_file"
+            print_info "Backup comprimido: ${backup_file}.gz"
+        fi
         
-        # Reiniciar aplicación
-        pm2 start ecosystem.config.js --env production
-        print_success "Aplicación reiniciada"
+        # Limpiar backups antiguos (mantener últimos 7)
+        ls -t "${backup_dir}"/nexos_backup_*.sql* 2>/dev/null | tail -n +8 | xargs rm -f 2>/dev/null
+        print_info "Backups antiguos limpiados"
     else
-        print_error "Error al restaurar la base de datos"
+        print_error "Error al crear backup"
         exit 1
     fi
 }
 
-edit_env() {
-    check_app_dir
+# Instalar servicio systemd
+install_service() {
+    print_info "Instalando servicio systemd..."
+    check_sudo
     
-    local env_file="${APP_DIR}/.env"
+    local service_file="/etc/systemd/system/${SERVICE_NAME}.service"
+    local current_user=$(whoami)
+    local current_dir="$(pwd)"
     
-    if [ ! -f "$env_file" ]; then
-        print_error "Archivo .env no encontrado: $env_file"
+    # Verificar que existe src/server.js
+    if [ ! -f "src/server.js" ]; then
+        print_error "No se encontró src/server.js en el directorio actual"
         exit 1
     fi
     
-    print_status "Editando variables de entorno..."
-    print_warning "Recuerda reiniciar la aplicación después de los cambios"
-    
-    # Usar el editor preferido del usuario
-    local editor="${EDITOR:-nano}"
-    
-    sudo -u ubuntu "$editor" "$env_file"
-    
-    read -p "¿Reiniciar la aplicación ahora? (y/N): " -n 1 -r
-    echo
-    
-    if [[ $REPLY =~ ^[Yy]$ ]]; then
-        restart_app
-    fi
-}
+    # Crear archivo de servicio
+    print_info "Creando archivo de servicio..."
+    sudo tee "$service_file" > /dev/null << EOF
+[Unit]
+Description=Nexos Subscription Manager
+After=network.target postgresql.service
+Wants=postgresql.service
 
-create_admin() {
-    check_app_dir
+[Service]
+Type=simple
+User=${current_user}
+WorkingDirectory=${current_dir}
+ExecStart=/usr/bin/node src/server.js
+Restart=always
+RestartSec=5
+Environment=NODE_ENV=production
+Environment=PATH=/usr/bin:/usr/local/bin
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=nexos-subscription
+
+[Install]
+WantedBy=multi-user.target
+EOF
     
-    print_status "Creando nuevo administrador..."
-    cd "$APP_DIR"
+    # Recargar systemd y habilitar servicio
+    sudo systemctl daemon-reload
     
-    if [ -f "src/setup/createAdmin.js" ]; then
-        npm run setup
+    if sudo systemctl enable "$SERVICE_NAME"; then
+        print_success "Servicio instalado y habilitado"
+        print_info "Ahora puedes usar: $0 start"
     else
-        print_error "Script de creación de admin no encontrado"
+        print_error "Error al instalar el servicio"
         exit 1
     fi
 }
 
-check_health() {
-    print_status "Verificando salud del sistema..."
-    echo ""
+# Probar aplicación localmente
+test_app() {
+    print_info "Probando aplicación localmente..."
     
-    # Verificar PM2
-    if pm2 list | grep -q "$APP_NAME.*online"; then
-        print_success "PM2: Aplicación ejecutándose"
-    else
-        print_error "PM2: Aplicación no está ejecutándose"
+    if [ ! -f "src/server.js" ]; then
+        print_error "No se encontró src/server.js"
+        exit 1
     fi
     
-    # Verificar PostgreSQL
-    if systemctl is-active --quiet postgresql; then
-        print_success "PostgreSQL: Servicio activo"
-    else
-        print_error "PostgreSQL: Servicio inactivo"
-    fi
-    
-    # Verificar conectividad HTTP
-    if curl -f -s "http://localhost:3001/health" > /dev/null; then
-        print_success "HTTP: Aplicación responde"
-    else
-        print_error "HTTP: Aplicación no responde"
-    fi
-    
-    # Verificar espacio en disco
-    local disk_usage=$(df / | tail -1 | awk '{print $5}' | sed 's/%//')
-    if [ "$disk_usage" -lt 80 ]; then
-        print_success "Disco: ${disk_usage}% usado"
-    else
-        print_warning "Disco: ${disk_usage}% usado (considerar limpieza)"
-    fi
-    
-    # Verificar memoria
-    local mem_usage=$(free | grep Mem | awk '{printf "%.0f", $3/$2 * 100}')
-    if [ "$mem_usage" -lt 80 ]; then
-        print_success "Memoria: ${mem_usage}% usada"
-    else
-        print_warning "Memoria: ${mem_usage}% usada"
-    fi
-    
-    echo ""
-    print_status "Logs recientes de la aplicación:"
-    pm2 logs "$APP_NAME" --lines 3 --nostream 2>/dev/null || echo "No hay logs disponibles"
-}
-
-show_ip() {
-    local server_ip=$(curl -s ifconfig.me 2>/dev/null || echo "NO_DISPONIBLE")
-    
-    echo "======================================"
-    echo "URLs de Acceso"
-    echo "======================================"
-    echo ""
-    echo "🌐 IP del servidor: $server_ip"
-    echo ""
-    echo "📱 Panel de Administración:"
-    echo "   http://$server_ip:3001/admin"
-    echo ""
-    echo "🔧 API Endpoints:"
-    echo "   • Health Check: http://$server_ip:3001/health"
-    echo "   • Status: http://$server_ip:3001/api/status"
-    echo "   • Auth: http://$server_ip:3001/api/auth"
-    echo ""
-    echo "📊 Monitoreo:"
-    echo "   • PM2 Web: pm2 web (puerto 9615)"
-    echo ""
-    
-    if [ "$server_ip" = "NO_DISPONIBLE" ]; then
-        print_warning "No se pudo obtener la IP pública"
-        echo "IP local: $(hostname -I | awk '{print $1}')"
-    fi
-}
-
-# Función para mostrar estadísticas avanzadas
-show_advanced_status() {
-    echo "======================================"
-    echo "Estadísticas Avanzadas"
-    echo "======================================"
-    echo ""
-    
-    # Información del sistema
-    print_status "Sistema:"
-    echo "  • SO: $(lsb_release -d 2>/dev/null | cut -f2 || uname -s)"
-    echo "  • Kernel: $(uname -r)"
-    echo "  • Uptime: $(uptime -p 2>/dev/null || uptime)"
-    echo ""
-    
-    # Información de Node.js
-    print_status "Runtime:"
-    echo "  • Node.js: $(node --version)"
-    echo "  • NPM: $(npm --version)"
-    echo "  • PM2: $(pm2 --version)"
-    echo ""
-    
-    # Información de la aplicación
-    if [ -f "$APP_DIR/package.json" ]; then
-        local app_version=$(grep '"version"' "$APP_DIR/package.json" | cut -d'"' -f4)
-        print_status "Aplicación:"
-        echo "  • Versión: $app_version"
-        echo "  • Directorio: $APP_DIR"
-        echo "  • Proceso: $APP_NAME"
-        echo ""
-    fi
-    
-    # Estadísticas de PM2
-    print_status "PM2 Estadísticas:"
-    pm2 show "$APP_NAME" 2>/dev/null | grep -E "(uptime|restart|cpu|memory)" | sed 's/^/  • /'
-    echo ""
-    
-    # Conexiones de red
-    print_status "Conexiones de red (puerto 3001):"
-    local connections=$(netstat -an 2>/dev/null | grep ":3001" | wc -l)
-    echo "  • Conexiones activas: $connections"
-    echo ""
-}
-
-# Función principal
-main() {
-    case "$1" in
-        "status")
-            show_status
-            ;;
-        "status-advanced")
-            show_advanced_status
-            ;;
-        "logs")
-            show_logs
-            ;;
-        "restart")
-            restart_app
-            ;;
-        "stop")
-            stop_app
-            ;;
-        "start")
-            start_app
-            ;;
-        "update")
-            update_app
-            ;;
-        "backup")
-            backup_database
-            ;;
-        "restore")
-            restore_database "$2"
-            ;;
-        "env")
-            edit_env
-            ;;
-        "admin")
-            create_admin
-            ;;
-        "health")
-            check_health
-            ;;
-        "ip")
-            show_ip
-            ;;
-        "help"|"-h"|"--help")
-            print_help
-            ;;
-        "")
-            print_help
-            ;;
-        *)
-            print_error "Comando desconocido: $1"
-            echo ""
-            print_help
+    if [ ! -f ".env" ]; then
+        print_warning "No se encontró archivo .env"
+        print_info "Copiando desde .env.example..."
+        
+        if [ -f ".env.example" ]; then
+            cp .env.example .env
+            print_warning "Edita el archivo .env antes de continuar"
             exit 1
-            ;;
-    esac
+        else
+            print_error "Tampoco se encontró .env.example"
+            exit 1
+        fi
+    fi
+    
+    print_info "Ejecutando: npm start"
+    print_warning "Presiona Ctrl+C para detener"
+    npm start
 }
 
-# Verificar que PM2 esté disponible
-if ! command -v pm2 > /dev/null; then
-    print_error "PM2 no está instalado o no está en el PATH"
-    exit 1
-fi
-
-# Ejecutar función principal
-main "$@"
+# Procesamiento de comandos
+case "${1}" in
+    start)
+        start_service
+        ;;
+    stop)
+        stop_service
+        ;;
+    restart)
+        restart_service
+        ;;
+    status)
+        show_status
+        ;;
+    logs)
+        show_logs
+        ;;
+    enable)
+        enable_service
+        ;;
+    disable)
+        disable_service
+        ;;
+    update)
+        update_app
+        ;;
+    backup)
+        backup_database
+        ;;
+    install)
+        install_service
+        ;;
+    test)
+        test_app
+        ;;
+    help|--help|-h)
+        show_help
+        ;;
+    *)
+        print_error "Comando no reconocido: ${1:-''}"
+        echo ""
+        show_help
+        exit 1
+        ;;
+esac
