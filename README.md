@@ -97,3 +97,87 @@
 - Detener aplicación: `sudo systemctl stop hexzor-subscription`
 - Iniciar aplicación: `sudo systemctl start hexzor-subscription`
 - Ver logs históricos: `sudo journalctl -u hexzor-subscription --lines=100`
+
+## Sistema de Sesión Única por Dispositivo
+
+### Descripción
+
+El sistema garantiza que cada usuario solo pueda usar su cuenta en **un dispositivo a la vez**. Si intenta acceder desde un segundo dispositivo mientras existe una sesión activa en otro, el acceso será bloqueado.
+
+### Funcionamiento
+
+1. **Device Fingerprinting**: Cada dispositivo genera un identificador único basado en hardware (CPU, RAM, MAC address, etc.)
+2. **Tabla `active_sessions`**: Registra sesiones activas con constraint `UNIQUE(email, device_fingerprint)`
+3. **Validación en tiempo real**: Cada request autenticado verifica que no haya sesiones en otros dispositivos
+
+### Flujo de Usuario
+
+```
+Usuario en Dispositivo A → Login exitoso → Sesión activa creada
+Usuario en Dispositivo B → Intento de login → ❌ BLOQUEADO (sesión activa en A)
+```
+
+El bloqueo persiste hasta que:
+- Expire el token (24h)
+- Usuario cierre sesión en Dispositivo A
+- Admin invalide la sesión manualmente
+
+### API Endpoints Relevantes
+
+| Endpoint | Descripción |
+|----------|-------------|
+| `POST /api/auth/request-code` | Solicitar código (requiere header `x-device-fingerprint`) |
+| `POST /api/auth/verify-code` | Verificar código y crear sesión |
+| `DELETE /api/auth/session/logout` | Cerrar sesión actual |
+| `DELETE /api/auth/sessions/all` | Cerrar TODAS las sesiones (emergencia) |
+| `GET /api/auth/sessions` | Ver sesiones activas del usuario |
+
+### Respuestas de Error
+
+**Sesión activa en otro dispositivo:**
+```json
+{
+  "success": false,
+  "error": "Ya existe una sesión activa en otro dispositivo",
+  "code": "MULTIPLE_DEVICE_BLOCKED",
+  "blockedUntil": "2025-09-30T15:30:00.000Z",
+  "message": "Solo puedes usar tu cuenta en un dispositivo a la vez..."
+}
+```
+
+### Implementación en Cliente
+
+El cliente (Cookies Hexzor) debe:
+
+1. **Generar device fingerprint** usando `node-machine-id`
+2. **Enviar header** `x-device-fingerprint` en todos los requests
+3. **Manejar errores** `MULTIPLE_DEVICE_BLOCKED` mostrando mensaje claro
+
+Ver guía completa en [DEVICE_FINGERPRINTING_CLIENT.md](DEVICE_FINGERPRINTING_CLIENT.md)
+
+### Administración
+
+**Consultar sesiones activas:**
+```sql
+SELECT email, device_fingerprint, ip_address, last_activity, expires_at
+FROM active_sessions WHERE expires_at > NOW();
+```
+
+**Invalidar sesión de usuario específico:**
+```javascript
+await db.invalidateSession('user@example.com');
+```
+
+**Ver bloqueos recientes:**
+```sql
+SELECT email, ip_address, error_message, created_at
+FROM access_logs
+WHERE action = 'BLOCKED_MULTIPLE_DEVICE_ATTEMPT'
+ORDER BY created_at DESC LIMIT 50;
+```
+
+### Mantenimiento Automático
+
+- **Limpieza de sesiones expiradas**: Cada 30 minutos automáticamente
+- **Logs de auditoría**: Todos los eventos registrados en `access_logs`
+- **Backups**: Incluir tabla `active_sessions` en respaldos de BD

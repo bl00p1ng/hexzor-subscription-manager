@@ -1,5 +1,6 @@
 import express from 'express';
 import jwt from 'jsonwebtoken';
+import crypto from 'crypto';
 import rateLimit from 'express-rate-limit';
 import { body, validationResult } from 'express-validator';
 import { captureDeviceFingerprint } from '../middleware/deviceFingerprint.js';
@@ -321,6 +322,7 @@ router.post('/verify-code',
 
             const { email, code } = req.body;
             const { db, emailService } = req.app.locals;
+            const deviceFingerprint = req.deviceFingerprint;
 
             console.log(`🔑 Verificando código para ${email}: ${code}`);
 
@@ -328,7 +330,7 @@ router.post('/verify-code',
             const isValidCode = await db.verifyAccessCode(email, code.toUpperCase());
 
             console.log(`🔍 Código válido: ${isValidCode}`);
-            
+
             if (!isValidCode) {
                 // Log verificación fallida
                 await db.logAccess({
@@ -348,7 +350,7 @@ router.post('/verify-code',
 
             // Obtener datos de suscripción
             const subscription = await db.checkActiveSubscription(email);
-            
+
             if (!subscription) {
                 return res.status(403).json({
                     success: false,
@@ -358,7 +360,7 @@ router.post('/verify-code',
 
             // Generar token de sesión
             const token = jwt.sign(
-                { 
+                {
                     email: email,
                     customerId: subscription.id,
                     customerName: subscription.customer_name,
@@ -369,13 +371,34 @@ router.post('/verify-code',
                 { expiresIn: '24h' }
             );
 
+            // CREAR SESIÓN ACTIVA EN LA BASE DE DATOS
+            const tokenHash = crypto.createHash('sha256').update(token).digest('hex');
+            const sessionExpiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000); // 24h
+
+            await db.createActiveSession({
+                email,
+                deviceFingerprint,
+                jwtTokenHash: tokenHash,
+                ipAddress: req.ip,
+                userAgent: req.get('User-Agent'),
+                deviceInfo: {
+                    fingerprint: deviceFingerprint,
+                    timestamp: new Date().toISOString()
+                },
+                expiresAt: sessionExpiresAt
+            });
+
             // Log acceso exitoso
             await db.logAccess({
                 email,
                 action: 'code_verify_success',
                 ipAddress: req.ip,
                 userAgent: req.get('User-Agent'),
-                success: true
+                success: true,
+                metadata: {
+                    deviceFingerprint,
+                    sessionCreated: true
+                }
             });
 
             // Notificar a admin (opcional)
@@ -392,7 +415,8 @@ router.post('/verify-code',
                         email: email,
                         name: subscription.customer_name,
                         subscriptionEnd: subscription.end_date
-                    }
+                    },
+                    deviceFingerprint
                 }
             });
 
@@ -503,6 +527,188 @@ router.post('/validate-token', [
 
     } catch (error) {
         console.error('Error validando token:', error.message);
+        res.status(500).json({
+            success: false,
+            error: 'Error interno del servidor'
+        });
+    }
+});
+
+/**
+ * GET /api/auth/sessions
+ * Obtiene sesiones activas del usuario autenticado
+ */
+router.get('/sessions', [
+    body('email').isEmail().withMessage('Email válido requerido'),
+    body('token').notEmpty().withMessage('Token requerido')
+], async (req, res) => {
+    try {
+        const errors = validationResult(req);
+        if (!errors.isEmpty()) {
+            return res.status(400).json({
+                success: false,
+                error: 'Datos inválidos'
+            });
+        }
+
+        const { email, token } = req.body;
+        const { db } = req.app.locals;
+
+        // Verificar token
+        let decoded;
+        try {
+            decoded = jwt.verify(token, process.env.JWT_SECRET);
+        } catch (err) {
+            return res.status(401).json({
+                success: false,
+                error: 'Token inválido o expirado'
+            });
+        }
+
+        // Verificar que el email coincida
+        if (decoded.email !== email) {
+            return res.status(403).json({
+                success: false,
+                error: 'Email no coincide con el token'
+            });
+        }
+
+        // Obtener sesiones activas
+        const sessions = await db.getActiveSessions(email);
+
+        res.json({
+            success: true,
+            data: {
+                sessions: sessions.map(s => ({
+                    id: s.id,
+                    deviceFingerprint: s.device_fingerprint.substring(0, 16) + '...', // Ofuscar
+                    ipAddress: s.ip_address,
+                    userAgent: s.user_agent,
+                    lastActivity: s.last_activity,
+                    expiresAt: s.expires_at,
+                    createdAt: s.created_at
+                })),
+                total: sessions.length
+            }
+        });
+
+    } catch (error) {
+        console.error('Error obteniendo sesiones:', error.message);
+        res.status(500).json({
+            success: false,
+            error: 'Error interno del servidor'
+        });
+    }
+});
+
+/**
+ * DELETE /api/auth/session/logout
+ * Cierra la sesión actual del usuario
+ */
+router.delete('/session/logout', captureDeviceFingerprint, async (req, res) => {
+    try {
+        const authHeader = req.headers.authorization;
+
+        if (!authHeader || !authHeader.startsWith('Bearer ')) {
+            return res.status(401).json({
+                success: false,
+                error: 'Token requerido'
+            });
+        }
+
+        const token = authHeader.substring(7);
+        const { db } = req.app.locals;
+        const deviceFingerprint = req.deviceFingerprint;
+
+        // Verificar token
+        let decoded;
+        try {
+            decoded = jwt.verify(token, process.env.JWT_SECRET);
+        } catch (err) {
+            return res.status(401).json({
+                success: false,
+                error: 'Token inválido'
+            });
+        }
+
+        // Invalidar sesión del dispositivo actual
+        const removed = await db.invalidateSession(decoded.email, deviceFingerprint);
+
+        // Log logout
+        await db.logAccess({
+            email: decoded.email,
+            action: 'user_logout',
+            ipAddress: req.ip,
+            userAgent: req.get('User-Agent'),
+            success: true,
+            metadata: { deviceFingerprint, sessionsRemoved: removed }
+        });
+
+        res.json({
+            success: true,
+            message: 'Sesión cerrada exitosamente',
+            sessionsRemoved: removed
+        });
+
+    } catch (error) {
+        console.error('Error cerrando sesión:', error.message);
+        res.status(500).json({
+            success: false,
+            error: 'Error interno del servidor'
+        });
+    }
+});
+
+/**
+ * DELETE /api/auth/sessions/all
+ * Cierra TODAS las sesiones del usuario (útil para emergencias)
+ */
+router.delete('/sessions/all', async (req, res) => {
+    try {
+        const authHeader = req.headers.authorization;
+
+        if (!authHeader || !authHeader.startsWith('Bearer ')) {
+            return res.status(401).json({
+                success: false,
+                error: 'Token requerido'
+            });
+        }
+
+        const token = authHeader.substring(7);
+        const { db } = req.app.locals;
+
+        // Verificar token
+        let decoded;
+        try {
+            decoded = jwt.verify(token, process.env.JWT_SECRET);
+        } catch (err) {
+            return res.status(401).json({
+                success: false,
+                error: 'Token inválido'
+            });
+        }
+
+        // Invalidar todas las sesiones
+        const removed = await db.invalidateSession(decoded.email);
+
+        // Log logout masivo
+        await db.logAccess({
+            email: decoded.email,
+            action: 'user_logout_all',
+            ipAddress: req.ip,
+            userAgent: req.get('User-Agent'),
+            success: true,
+            metadata: { sessionsRemoved: removed }
+        });
+
+        res.json({
+            success: true,
+            message: 'Todas las sesiones han sido cerradas',
+            sessionsRemoved: removed
+        });
+
+    } catch (error) {
+        console.error('Error cerrando todas las sesiones:', error.message);
         res.status(500).json({
             success: false,
             error: 'Error interno del servidor'

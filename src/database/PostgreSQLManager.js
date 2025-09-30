@@ -1,5 +1,6 @@
 import pg from 'pg';
 import bcrypt from 'bcryptjs';
+import crypto from 'crypto';
 
 const { Pool } = pg;
 
@@ -134,6 +135,24 @@ class PostgreSQLManager {
                 )
             `);
 
+            // Tabla de sesiones activas - Control de dispositivos únicos
+            await client.query(`
+                CREATE TABLE IF NOT EXISTS active_sessions (
+                    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+                    email VARCHAR(255) NOT NULL,
+                    device_fingerprint TEXT NOT NULL,
+                    session_token TEXT UNIQUE NOT NULL,
+                    jwt_token_hash TEXT NOT NULL,
+                    ip_address INET NULL,
+                    user_agent TEXT NULL,
+                    device_info JSONB DEFAULT '{}'::jsonb,
+                    last_activity TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+                    expires_at TIMESTAMP WITH TIME ZONE NOT NULL,
+                    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+                    UNIQUE(email, device_fingerprint)
+                )
+            `);
+
             // Crear índices para optimización
             const indexes = [
                 'CREATE INDEX IF NOT EXISTS idx_subscriptions_email ON active_subscriptions(email)',
@@ -147,7 +166,11 @@ class PostgreSQLManager {
                 'CREATE INDEX IF NOT EXISTS idx_access_logs_created ON access_logs(created_at)',
                 'CREATE INDEX IF NOT EXISTS idx_access_logs_action ON access_logs(action)',
                 'CREATE INDEX IF NOT EXISTS idx_admin_users_email ON admin_users(email)',
-                'CREATE INDEX IF NOT EXISTS idx_admin_users_active ON admin_users(is_active)'
+                'CREATE INDEX IF NOT EXISTS idx_admin_users_active ON admin_users(is_active)',
+                'CREATE INDEX IF NOT EXISTS idx_active_sessions_email ON active_sessions(email)',
+                'CREATE INDEX IF NOT EXISTS idx_active_sessions_token ON active_sessions(session_token)',
+                'CREATE INDEX IF NOT EXISTS idx_active_sessions_expires ON active_sessions(expires_at)',
+                'CREATE INDEX IF NOT EXISTS idx_active_sessions_email_active ON active_sessions(email, expires_at) WHERE expires_at > NOW()'
             ];
 
             for (const index of indexes) {
@@ -642,6 +665,156 @@ class PostgreSQLManager {
                 topUsers: topUsers
             }
         };
+    }
+
+    /**
+     * Crea o actualiza una sesión activa
+     * @param {Object} sessionData - Datos de la sesión
+     * @returns {Promise<string>} Session token
+     */
+    async createActiveSession(sessionData) {
+        const {
+            email,
+            deviceFingerprint,
+            jwtTokenHash,
+            ipAddress,
+            userAgent,
+            deviceInfo,
+            expiresAt
+        } = sessionData;
+
+        const sessionToken = crypto.randomUUID();
+
+        // Usar UPSERT para actualizar si ya existe la combinación email+fingerprint
+        await this.query(`
+            INSERT INTO active_sessions
+            (email, device_fingerprint, session_token, jwt_token_hash, ip_address, user_agent, device_info, expires_at)
+            VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+            ON CONFLICT (email, device_fingerprint)
+            DO UPDATE SET
+                session_token = EXCLUDED.session_token,
+                jwt_token_hash = EXCLUDED.jwt_token_hash,
+                ip_address = EXCLUDED.ip_address,
+                user_agent = EXCLUDED.user_agent,
+                device_info = EXCLUDED.device_info,
+                last_activity = NOW(),
+                expires_at = EXCLUDED.expires_at
+        `, [email, deviceFingerprint, sessionToken, jwtTokenHash, ipAddress, userAgent, JSON.stringify(deviceInfo), expiresAt]);
+
+        return sessionToken;
+    }
+
+    /**
+     * Valida que solo exista una sesión activa por usuario
+     * @param {string} email - Email del usuario
+     * @param {string} deviceFingerprint - Fingerprint del dispositivo
+     * @param {string} jwtTokenHash - Hash del JWT actual
+     * @returns {Promise<Object>} Resultado de validación
+     */
+    async validateSingleSession(email, deviceFingerprint, jwtTokenHash) {
+        // Limpiar sesiones expiradas primero
+        await this.query(
+            'DELETE FROM active_sessions WHERE expires_at < NOW()'
+        );
+
+        // Buscar sesiones activas para este email
+        const activeSessions = await this.getMany(
+            'SELECT * FROM active_sessions WHERE email = $1 AND expires_at > NOW()',
+            [email]
+        );
+
+        if (activeSessions.length === 0) {
+            return { valid: true, reason: 'no_active_sessions' };
+        }
+
+        // Si hay sesión con mismo fingerprint y token hash, es válida
+        const matchingSession = activeSessions.find(
+            s => s.device_fingerprint === deviceFingerprint && s.jwt_token_hash === jwtTokenHash
+        );
+
+        if (matchingSession) {
+            // Actualizar última actividad
+            await this.query(
+                'UPDATE active_sessions SET last_activity = NOW() WHERE id = $1',
+                [matchingSession.id]
+            );
+            return { valid: true, reason: 'same_device_session', session: matchingSession };
+        }
+
+        // Si hay sesión con mismo fingerprint pero diferente token (renovación)
+        const sameDeviceSession = activeSessions.find(
+            s => s.device_fingerprint === deviceFingerprint
+        );
+
+        if (sameDeviceSession) {
+            return { valid: true, reason: 'same_device_new_token', session: sameDeviceSession };
+        }
+
+        // Hay sesión activa en otro dispositivo
+        return {
+            valid: false,
+            reason: 'session_exists_another_device',
+            blockedUntil: activeSessions[0].expires_at,
+            activeDevice: {
+                fingerprint: activeSessions[0].device_fingerprint,
+                lastActivity: activeSessions[0].last_activity,
+                ipAddress: activeSessions[0].ip_address
+            }
+        };
+    }
+
+    /**
+     * Invalida sesión activa de un usuario
+     * @param {string} email - Email del usuario
+     * @param {string} deviceFingerprint - Fingerprint opcional para invalidar dispositivo específico
+     * @returns {Promise<number>} Número de sesiones invalidadas
+     */
+    async invalidateSession(email, deviceFingerprint = null) {
+        if (deviceFingerprint) {
+            const result = await this.query(
+                'DELETE FROM active_sessions WHERE email = $1 AND device_fingerprint = $2',
+                [email, deviceFingerprint]
+            );
+            return result.rowCount;
+        } else {
+            const result = await this.query(
+                'DELETE FROM active_sessions WHERE email = $1',
+                [email]
+            );
+            return result.rowCount;
+        }
+    }
+
+    /**
+     * Obtiene sesiones activas de un usuario
+     * @param {string} email - Email del usuario
+     * @returns {Promise<Array>} Sesiones activas
+     */
+    async getActiveSessions(email) {
+        return await this.getMany(
+            `SELECT id, device_fingerprint, ip_address, user_agent, device_info,
+                    last_activity, expires_at, created_at
+             FROM active_sessions
+             WHERE email = $1 AND expires_at > NOW()
+             ORDER BY last_activity DESC`,
+            [email]
+        );
+    }
+
+    /**
+     * Limpia sesiones expiradas (ejecutar periódicamente)
+     * @returns {Promise<number>} Número de sesiones eliminadas
+     */
+    async cleanExpiredSessions() {
+        const result = await this.query(
+            'DELETE FROM active_sessions WHERE expires_at < NOW()'
+        );
+
+        if (result.rowCount > 0) {
+            console.log(`🧹 Limpiadas ${result.rowCount} sesiones expiradas`);
+        }
+
+        return result.rowCount;
     }
 
     /**

@@ -288,7 +288,7 @@ class AuthServer {
     async start() {
         try {
             await this.initialize();
-            
+
             this.server = this.app.listen(this.port, () => {
                 console.log('═'.repeat(60));
                 console.log('🎊 SERVIDOR DE AUTENTICACIÓN INICIADO');
@@ -302,10 +302,30 @@ class AuthServer {
                 console.log('═'.repeat(60));
             });
 
+            // Iniciar limpieza periódica de sesiones expiradas (cada 30 minutos)
+            this.startSessionCleanupJob();
+
         } catch (error) {
             console.error('❌ Error iniciando servidor:', error.message);
             process.exit(1);
         }
+    }
+
+    /**
+     * Inicia job de limpieza periódica de sesiones expiradas
+     */
+    startSessionCleanupJob() {
+        const CLEANUP_INTERVAL = 30 * 60 * 1000; // 30 minutos
+
+        this.cleanupInterval = setInterval(async () => {
+            try {
+                await this.db.cleanExpiredSessions();
+            } catch (error) {
+                console.error('❌ Error en limpieza de sesiones:', error.message);
+            }
+        }, CLEANUP_INTERVAL);
+
+        console.log('🧹 Job de limpieza de sesiones iniciado (cada 30 min)');
     }
 
     /**
@@ -315,6 +335,12 @@ class AuthServer {
         console.log('\n🛑 Iniciando cierre elegante del servidor...');
 
         try {
+            // Detener job de limpieza
+            if (this.cleanupInterval) {
+                clearInterval(this.cleanupInterval);
+                console.log('✅ Job de limpieza detenido');
+            }
+
             // Cerrar servidor HTTP
             if (this.server) {
                 await new Promise((resolve) => {

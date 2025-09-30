@@ -1,4 +1,5 @@
 import jwt from 'jsonwebtoken';
+import crypto from 'crypto';
 import { validationResult } from 'express-validator';
 
 /**
@@ -63,12 +64,12 @@ export const authenticateAdmin = async (req, res, next) => {
 
 /**
  * Middleware para autenticar usuarios finales
- * Verifica token JWT y suscripción activa
+ * Verifica token JWT, suscripción activa Y sesión única por dispositivo
  */
 export const authenticateUser = async (req, res, next) => {
     try {
         const authHeader = req.headers.authorization;
-        
+
         if (!authHeader || !authHeader.startsWith('Bearer ')) {
             return res.status(401).json({
                 success: false,
@@ -80,7 +81,7 @@ export const authenticateUser = async (req, res, next) => {
 
         // Verificar token JWT
         const decoded = jwt.verify(token, process.env.JWT_SECRET);
-        
+
         // Verificar que es un token de usuario
         if (decoded.role !== 'user') {
             return res.status(403).json({
@@ -92,11 +93,51 @@ export const authenticateUser = async (req, res, next) => {
         // Verificar suscripción activa en base de datos
         const { db } = req.app.locals;
         const subscription = await db.checkActiveSubscription(decoded.email);
-        
+
         if (!subscription) {
             return res.status(403).json({
                 success: false,
                 error: 'Suscripción expirada o inválida'
+            });
+        }
+
+        // VALIDACIÓN DE SESIÓN ÚNICA POR DISPOSITIVO
+        const deviceFingerprint = req.headers['x-device-fingerprint'];
+
+        if (!deviceFingerprint) {
+            return res.status(400).json({
+                success: false,
+                error: 'Device fingerprint requerido'
+            });
+        }
+
+        // Hash del token para comparación
+        const tokenHash = crypto.createHash('sha256').update(token).digest('hex');
+
+        // Validar que solo exista una sesión activa
+        const sessionValidation = await db.validateSingleSession(
+            decoded.email,
+            deviceFingerprint,
+            tokenHash
+        );
+
+        if (!sessionValidation.valid) {
+            // Log de intento de acceso multi-dispositivo
+            await db.logAccess({
+                email: decoded.email,
+                action: 'BLOCKED_MULTIPLE_DEVICE_ATTEMPT',
+                ipAddress: req.ip,
+                userAgent: req.get('User-Agent'),
+                success: false,
+                errorMessage: `Sesión activa en otro dispositivo. Bloqueado hasta: ${sessionValidation.blockedUntil}`
+            });
+
+            return res.status(403).json({
+                success: false,
+                error: 'Ya existe una sesión activa en otro dispositivo',
+                code: 'MULTIPLE_DEVICE_BLOCKED',
+                blockedUntil: sessionValidation.blockedUntil,
+                message: 'Solo puedes usar tu cuenta en un dispositivo a la vez. Espera a que expire la sesión del otro dispositivo o contáctanos para adquirir licencias adicionales.'
             });
         }
 
@@ -107,7 +148,9 @@ export const authenticateUser = async (req, res, next) => {
             customerName: decoded.customerName,
             subscriptionEnd: decoded.subscriptionEnd,
             role: decoded.role,
-            subscription: subscription
+            subscription: subscription,
+            deviceFingerprint: deviceFingerprint,
+            sessionValidation: sessionValidation
         };
 
         next();
@@ -119,7 +162,7 @@ export const authenticateUser = async (req, res, next) => {
                 error: 'Sesión expirada. Solicita un nuevo código de acceso.'
             });
         }
-        
+
         if (error.name === 'JsonWebTokenError') {
             return res.status(401).json({
                 success: false,
