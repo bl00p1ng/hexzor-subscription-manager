@@ -70,7 +70,7 @@
     #PrivateTmp=true
     #ProtectSystem=strict
     #ProtectHome=true
-    ReadWritePaths=/home/dev/apps/hexzor-subscription-manager
+    #ReadWritePaths=/home/dev/apps/hexzor-subscription-manager
 
     # Configuración de recursos
     # MemoryLimit=6144M
