@@ -89,6 +89,22 @@
 - Iniciar el servicio: `sudo systemctl start hexzor-subscription`
 - Verificar estado: `sudo systemctl status hexzor-subscription`
 
+- Verificar estado del Firewall: `sudo ufw status`
+- Habilitar ell puerto 3001: `sudo ufw allow 3001/tcp`
+- Ver dirección IP: `curl -4 ifconfig.me`
+- En el archivo `.env` agregar la dirección IP en las variables `FRONTEND_URL` y `ADMIN_PANEL_URL`. La estrcutura que deben tener dichas variables es la siguiente:
+    ```
+    FRONTEND_URL=http://<ip>:3001
+    ADMIN_PANEL_URL=http://<ip>:3001/admin
+    ```
+- [Ingresar a ngrok](https://ngrok.com/), sino se tiene una cuenta, crear una y seguir las instrucciones de instalación.
+- Instalar screen para dejar el proceso de ngrok corriendo en segundo plano: `sudo apt install screen`
+- Crear sesión para ngrok: `screen -S ngrok`
+- Ejecutar ngrok dentro de la sesión creada: `ngrok http 3001`
+- Copiar el URL de ngrok y agregarla a la variable `backendUrl` en el código del cliente de electron, tanto en la configuración por defecto en `ConfigManager.js` como en `config.json`.
+- Presionar Ctrl+A después D (para "detach")
+- Para volver a acceder a la sesión creada de ngrok: `screen -r ngrok`
+
 ## Monitorear/Administrar App
 
 - Ver estado del servicio: `sudo systemctl status hexzor-subscription`
