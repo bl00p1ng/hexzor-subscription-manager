@@ -170,7 +170,7 @@ class PostgreSQLManager {
                 'CREATE INDEX IF NOT EXISTS idx_active_sessions_email ON active_sessions(email)',
                 'CREATE INDEX IF NOT EXISTS idx_active_sessions_token ON active_sessions(session_token)',
                 'CREATE INDEX IF NOT EXISTS idx_active_sessions_expires ON active_sessions(expires_at)',
-                'CREATE INDEX IF NOT EXISTS idx_active_sessions_email_active ON active_sessions(email, expires_at) WHERE expires_at > NOW()'
+                'CREATE INDEX IF NOT EXISTS idx_active_sessions_email_expires ON active_sessions(email, expires_at)'
             ];
 
             for (const index of indexes) {
