@@ -10,10 +10,14 @@ import dotenv from 'dotenv';
 // Importar servicios y rutas
 import PostgreSQLManager from './database/PostgreSQLManager.js';
 import EmailService from './services/EmailService.js';
+import { createLogger } from './services/Logger.js';
 import authRoutes from './routes/auth.js';
 import adminRoutes from './routes/admin.js';
 import adminPanelRoutes from './routes/admin-panel.js';
 import { handleExpiredSessions } from './middleware/sessionHandler.js';
+
+// Crear logger para el servidor
+const logger = createLogger('SERVER');
 
 // Configuración de variables de entorno
 dotenv.config();
@@ -39,7 +43,7 @@ class AuthServer {
      */
     async initialize() {
         try {
-            console.log('🚀 Iniciando servidor de autenticación...');
+            logger.info('🚀 Iniciando servidor de autenticación...');
 
             // Verificar variables de entorno críticas
             this.validateEnvironment();
@@ -68,10 +72,10 @@ class AuthServer {
             this.app.locals.db = this.db;
             this.app.locals.emailService = this.emailService;
 
-            console.log('✅ Servidor inicializado correctamente');
+            logger.info('✅ Servidor inicializado correctamente');
 
         } catch (error) {
-            console.error('❌ Error inicializando servidor:', error.message);
+            logger.error('❌ Error inicializando servidor', error);
             process.exit(1);
         }
     }
@@ -89,11 +93,11 @@ class AuthServer {
 
         // Advertencias para configuraciones opcionales
         if (!process.env.SMTP_USER) {
-            console.warn('⚠️ SMTP_USER no configurado - emails no funcionarán');
+            logger.warn('⚠️ SMTP_USER no configurado - emails no funcionarán');
         }
 
         if (!process.env.SMTP_PASS) {
-            console.warn('⚠️ SMTP_PASS no configurado - emails no funcionarán');
+            logger.warn('⚠️ SMTP_PASS no configurado - emails no funcionarán');
         }
     }
 
@@ -142,10 +146,16 @@ class AuthServer {
         // Trust proxy para obtener IP real
         this.app.set('trust proxy', 1);
 
-        // Middleware de logging
+        // Middleware de logging HTTP
         this.app.use((req, res, next) => {
-            const timestamp = new Date().toISOString();
-            console.log(`[${timestamp}] ${req.method} ${req.path} - IP: ${req.ip}`);
+            const startTime = Date.now();
+
+            // Capturar respuesta
+            res.on('finish', () => {
+                const duration = Date.now() - startTime;
+                logger.http(req, res.statusCode, duration);
+            });
+
             next();
         });
     }
@@ -254,7 +264,13 @@ class AuthServer {
 
         // Manejo global de errores
         this.app.use((error, req, res, next) => {
-            console.error('Error no manejado:', error);
+            logger.error('Error no manejado en request', {
+                error: error.message,
+                stack: error.stack,
+                path: req.path,
+                method: req.method,
+                ip: req.ip
+            });
 
             // No revelar detalles del error en producción
             const isDevelopment = process.env.NODE_ENV === 'development';
@@ -268,12 +284,15 @@ class AuthServer {
 
         // Manejo de promesas rechazadas
         process.on('unhandledRejection', (reason, promise) => {
-            console.error('Promesa rechazada no manejada:', reason);
+            logger.error('Promesa rechazada no manejada', {
+                reason: reason instanceof Error ? reason.message : reason,
+                stack: reason instanceof Error ? reason.stack : undefined
+            });
         });
 
         // Manejo de excepciones no capturadas
         process.on('uncaughtException', (error) => {
-            console.error('Excepción no capturada:', error);
+            logger.error('Excepción no capturada', error);
             this.gracefulShutdown();
         });
 
@@ -290,23 +309,34 @@ class AuthServer {
             await this.initialize();
 
             this.server = this.app.listen(this.port, () => {
-                console.log('═'.repeat(60));
-                console.log('🎊 SERVIDOR DE AUTENTICACIÓN INICIADO');
-                console.log('═'.repeat(60));
-                console.log(`🌐 URL: http://localhost:${this.port}`);
-                console.log(`📊 Panel Admin: http://localhost:${this.port}/admin`);
-                console.log(`🔌 API: http://localhost:${this.port}/api`);
-                console.log(`🗄️ Base de Datos: PostgreSQL - ${this.db.getConnectionInfo().connected ? 'Conectada' : 'Desconectada'}`);
-                console.log(`📧 Email: ${this.emailService.isConfigured() ? 'Configurado' : 'No configurado'}`);
-                console.log(`🛡️ JWT: ${process.env.JWT_SECRET ? 'Configurado' : 'No configurado'}`);
-                console.log('═'.repeat(60));
+                const banner = [
+                    '═'.repeat(60),
+                    '🎊 SERVIDOR DE AUTENTICACIÓN INICIADO',
+                    '═'.repeat(60),
+                    `🌐 URL: http://localhost:${this.port}`,
+                    `📊 Panel Admin: http://localhost:${this.port}/admin`,
+                    `🔌 API: http://localhost:${this.port}/api`,
+                    `🗄️ Base de Datos: PostgreSQL - ${this.db.getConnectionInfo().connected ? 'Conectada' : 'Desconectada'}`,
+                    `📧 Email: ${this.emailService.isConfigured() ? 'Configurado' : 'No configurado'}`,
+                    `🛡️ JWT: ${process.env.JWT_SECRET ? 'Configurado' : 'No configurado'}`,
+                    '═'.repeat(60)
+                ].join('\n');
+
+                console.log(banner);
+                logger.info('Servidor de autenticación iniciado', {
+                    port: this.port,
+                    nodeEnv: process.env.NODE_ENV || 'development',
+                    database: this.db.getConnectionInfo().connected ? 'connected' : 'disconnected',
+                    email: this.emailService.isConfigured(),
+                    jwt: !!process.env.JWT_SECRET
+                });
             });
 
             // Iniciar limpieza periódica de sesiones expiradas (cada 30 minutos)
             this.startSessionCleanupJob();
 
         } catch (error) {
-            console.error('❌ Error iniciando servidor:', error.message);
+            logger.error('❌ Error iniciando servidor', error);
             process.exit(1);
         }
     }
@@ -321,24 +351,24 @@ class AuthServer {
             try {
                 await this.db.cleanExpiredSessions();
             } catch (error) {
-                console.error('❌ Error en limpieza de sesiones:', error.message);
+                logger.error('Error en limpieza de sesiones', error);
             }
         }, CLEANUP_INTERVAL);
 
-        console.log('🧹 Job de limpieza de sesiones iniciado (cada 30 min)');
+        logger.info('Job de limpieza de sesiones iniciado', { intervalMinutes: 30 });
     }
 
     /**
      * Cierre elegante del servidor
      */
     async gracefulShutdown() {
-        console.log('\n🛑 Iniciando cierre elegante del servidor...');
+        logger.info('🛑 Iniciando cierre elegante del servidor...');
 
         try {
             // Detener job de limpieza
             if (this.cleanupInterval) {
                 clearInterval(this.cleanupInterval);
-                console.log('✅ Job de limpieza detenido');
+                logger.info('Job de limpieza detenido');
             }
 
             // Cerrar servidor HTTP
@@ -346,21 +376,27 @@ class AuthServer {
                 await new Promise((resolve) => {
                     this.server.close(resolve);
                 });
-                console.log('✅ Servidor HTTP cerrado');
+                logger.info('Servidor HTTP cerrado');
             }
 
             // Cerrar conexión a base de datos
             if (this.db) {
                 await this.db.close();
-                console.log('✅ Base de datos cerrada');
+                logger.info('Base de datos cerrada');
             }
 
-            console.log('✅ Cierre elegante completado');
-            process.exit(0);
+            logger.info('✅ Cierre elegante completado');
+
+            // Dar tiempo para que se escriban los logs
+            setTimeout(() => {
+                process.exit(0);
+            }, 500);
 
         } catch (error) {
-            console.error('❌ Error en cierre elegante:', error.message);
-            process.exit(1);
+            logger.error('Error en cierre elegante', error);
+            setTimeout(() => {
+                process.exit(1);
+            }, 500);
         }
     }
 }

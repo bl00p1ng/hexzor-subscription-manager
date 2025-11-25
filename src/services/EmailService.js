@@ -1,4 +1,7 @@
 import nodemailer from 'nodemailer';
+import { createLogger } from './Logger.js';
+
+const logger = createLogger('EMAIL');
 
 /**
  * Servicio de envío de emails para códigos de acceso
@@ -28,19 +31,23 @@ class EmailService {
     async initialize() {
         try {
             if (!this.config.auth.user || !this.config.auth.pass) {
-                console.warn('⚠️ Configuración SMTP incompleta - emails no funcionarán');
+                logger.warn('Configuración SMTP incompleta - emails no funcionarán');
                 return;
             }
 
             this.transporter = nodemailer.createTransport(this.config);
-            
+
             // Verificar conexión SMTP
             await this.transporter.verify();
-            console.log('✅ Servicio de email inicializado correctamente');
-            
+            logger.info('Servicio de email inicializado correctamente', {
+                host: this.config.host,
+                port: this.config.port,
+                secure: this.config.secure
+            });
+
         } catch (error) {
-            console.error('❌ Error inicializando servicio de email:', error.message);
-            console.log('📧 Los emails no estarán disponibles hasta configurar SMTP');
+            logger.error('Error inicializando servicio de email', error);
+            logger.warn('Los emails no estarán disponibles hasta configurar SMTP');
         }
     }
 
@@ -53,8 +60,12 @@ class EmailService {
      */
     async sendAccessCode(email, code, customerName = 'Usuario') {
         if (!this.transporter) {
-            console.warn(`⚠️ No se puede enviar email a ${email} - SMTP no configurado`);
-            console.log(`🔑 Código para ${email}: ${code} (válido por 10 minutos)`);
+            logger.warn('No se puede enviar email - SMTP no configurado', { to: email });
+            logger.info(`🔑 Código para ${email}: ${code} (válido por 10 minutos)`, {
+                to: email,
+                code,
+                validityMinutes: 10
+            });
             return false;
         }
 
@@ -71,16 +82,26 @@ class EmailService {
             };
 
             const result = await this.transporter.sendMail(mailOptions);
-            console.log(`📧 Email enviado a ${email} - ID: ${result.messageId}`);
-            
+            logger.email(email, 'Código de acceso', true, {
+                messageId: result.messageId,
+                customerName
+            });
+
             return true;
 
         } catch (error) {
-            console.error(`❌ Error enviando email a ${email}:`, error.message);
-            
+            logger.email(email, 'Código de acceso', false, {
+                error: error.message,
+                code: error.code
+            });
+
             // Fallback: mostrar código en consola para desarrollo
-            console.log(`🔑 Código para ${email}: ${code} (válido por 10 minutos)`);
-            
+            logger.info(`🔑 FALLBACK - Código para ${email}: ${code} (válido por 10 minutos)`, {
+                to: email,
+                code,
+                validityMinutes: 10
+            });
+
             return false;
         }
     }
@@ -269,7 +290,7 @@ Este es un email automático de notificación.
             return true;
 
         } catch (error) {
-            console.error('Error enviando notificación a admin:', error.message);
+            logger.error('Error enviando notificación a admin', error);
             return false;
         }
     }

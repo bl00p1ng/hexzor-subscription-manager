@@ -1,8 +1,10 @@
 import pg from 'pg';
 import bcrypt from 'bcryptjs';
 import crypto from 'crypto';
+import { createLogger } from '../services/Logger.js';
 
 const { Pool } = pg;
+const logger = createLogger('DATABASE');
 
 /**
  * Gestor de base de datos PostgreSQL para el sistema de autenticación
@@ -37,24 +39,29 @@ class PostgreSQLManager {
 
             // Probar conexión
             const client = await this.pool.connect();
-            console.log('✅ Conexión a PostgreSQL establecida');
-            
+            logger.info('Conexión a PostgreSQL establecida', {
+                host: this.config.host,
+                port: this.config.port,
+                database: this.config.database
+            });
+
             // Verificar versión
             const versionResult = await client.query('SELECT version()');
-            console.log(`📊 PostgreSQL versión: ${versionResult.rows[0].version.split(' ')[1]}`);
-            
+            const version = versionResult.rows[0].version.split(' ')[1];
+            logger.info(`PostgreSQL versión: ${version}`, { version });
+
             client.release();
 
             // Crear tablas si no existen
             await this.createTables();
-            
-            console.log('✅ Base de datos PostgreSQL inicializada');
+
+            logger.info('Base de datos PostgreSQL inicializada correctamente');
         } catch (error) {
-            console.error('❌ Error conectando a PostgreSQL:', error.message);
-            console.log('💡 Sugerencias:');
-            console.log('   1. Verificar que PostgreSQL esté ejecutándose');
-            console.log('   2. Revisar credenciales en .env');
-            console.log('   3. Verificar que la base de datos exista');
+            logger.error('Error conectando a PostgreSQL', error);
+            logger.warn('💡 Sugerencias:');
+            logger.warn('   1. Verificar que PostgreSQL esté ejecutándose');
+            logger.warn('   2. Revisar credenciales en .env');
+            logger.warn('   3. Verificar que la base de datos exista');
             throw error;
         }
     }
@@ -200,26 +207,26 @@ class PostgreSQLManager {
             `);
 
             await client.query('COMMIT');
-            console.log('✅ Tablas e índices creados correctamente');
+            logger.info('Tablas e índices creados correctamente');
 
             await client.query(`
-                ALTER TABLE access_codes 
+                ALTER TABLE access_codes
                 ADD COLUMN IF NOT EXISTS device_fingerprint TEXT,
                 ADD COLUMN IF NOT EXISTS session_token TEXT,
                 ADD COLUMN IF NOT EXISTS is_renewal BOOLEAN DEFAULT FALSE,
                 ADD COLUMN IF NOT EXISTS previous_session_id TEXT
             `);
-            
+
             await client.query(`
-                CREATE INDEX IF NOT EXISTS idx_access_codes_email_active 
-                ON access_codes(email) 
+                CREATE INDEX IF NOT EXISTS idx_access_codes_email_active
+                ON access_codes(email)
                 WHERE used_at IS NULL
             `);
-            
-            console.log('✅ Auto-migración: Control de sesiones aplicada');
+
+            logger.info('Auto-migración: Control de sesiones aplicada');
         } catch (error) {
             await client.query('ROLLBACK');
-            console.error('❌ Error creando tablas:', error.message);
+            logger.error('Error creando tablas', error);
             throw error;
         } finally {
             client.release();
@@ -235,11 +242,18 @@ class PostgreSQLManager {
     async query(text, params = []) {
         try {
             const result = await this.pool.query(text, params);
+            logger.debug('Query ejecutada exitosamente', {
+                query: text.substring(0, 100),
+                rowCount: result.rowCount
+            });
             return result;
         } catch (error) {
-            console.error('❌ Error en query PostgreSQL:', error.message);
-            console.error('Query:', text);
-            console.error('Params:', params);
+            logger.error('Error en query PostgreSQL', {
+                error: error.message,
+                code: error.code,
+                query: text.substring(0, 200),
+                params: JSON.stringify(params).substring(0, 100)
+            });
             throw error;
         }
     }
@@ -811,7 +825,9 @@ class PostgreSQLManager {
         );
 
         if (result.rowCount > 0) {
-            console.log(`🧹 Limpiadas ${result.rowCount} sesiones expiradas`);
+            logger.info(`Limpiadas ${result.rowCount} sesiones expiradas`, {
+                sessionsRemoved: result.rowCount
+            });
         }
 
         return result.rowCount;
@@ -824,7 +840,7 @@ class PostgreSQLManager {
     async close() {
         if (this.pool) {
             await this.pool.end();
-            console.log('✅ Pool de conexiones PostgreSQL cerrado');
+            logger.info('Pool de conexiones PostgreSQL cerrado');
         }
     }
 

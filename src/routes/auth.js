@@ -4,8 +4,10 @@ import crypto from 'crypto';
 import rateLimit from 'express-rate-limit';
 import { body, validationResult } from 'express-validator';
 import { captureDeviceFingerprint } from '../middleware/deviceFingerprint.js';
+import { createLogger } from '../services/Logger.js';
 
 const router = express.Router();
+const logger = createLogger('AUTH-ROUTES');
 
 /**
  * Rate limiting para diferentes endpoints
@@ -157,6 +159,13 @@ router.post('/request-code',
             const deviceFingerprint = req.deviceFingerprint;
             const sessionToken = req.cookies.session_token || null;
 
+            logger.info('Solicitud de código de acceso', {
+                email,
+                deviceFingerprint: deviceFingerprint.substring(0, 8),
+                ip: req.ip,
+                hasSessionToken: !!sessionToken
+            });
+
             // Verificar suscripción activa
             const subscription = await db.checkActiveSubscription(email);
             
@@ -271,8 +280,13 @@ router.post('/request-code',
             });
 
         } catch (error) {
-            console.error('Error solicitando código:', error.message);
-            
+            logger.error('Error solicitando código', {
+                error: error.message,
+                stack: error.stack,
+                email: req.body?.email,
+                ip: req.ip
+            });
+
             // Log error genérico
             await req.app.locals.db.logAccess({
                 email: req.body?.email || 'unknown',
@@ -324,12 +338,20 @@ router.post('/verify-code',
             const { db, emailService } = req.app.locals;
             const deviceFingerprint = req.deviceFingerprint;
 
-            console.log(`🔑 Verificando código para ${email}: ${code}`);
+            logger.info('Verificación de código', {
+                email,
+                code: code.substring(0, 3) + '***',
+                deviceFingerprint: deviceFingerprint.substring(0, 8),
+                ip: req.ip
+            });
 
             // Verificar código
             const isValidCode = await db.verifyAccessCode(email, code.toUpperCase());
 
-            console.log(`🔍 Código válido: ${isValidCode}`);
+            logger.debug('Resultado de verificación de código', {
+                email,
+                isValid: isValidCode
+            });
 
             if (!isValidCode) {
                 // Log verificación fallida
@@ -421,7 +443,12 @@ router.post('/verify-code',
             });
 
         } catch (error) {
-            console.error('Error verificando código:', error.message);
+            logger.error('Error verificando código', {
+                error: error.message,
+                stack: error.stack,
+                email: req.body?.email,
+                ip: req.ip
+            });
             res.status(500).json({
                 success: false,
                 error: 'Error interno del servidor'

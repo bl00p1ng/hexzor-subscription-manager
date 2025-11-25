@@ -1,8 +1,10 @@
 import express from 'express';
 import { body, query, validationResult } from 'express-validator';
 import { authenticateAdmin } from '../middleware/auth.js';
+import { createLogger } from '../services/Logger.js';
 
 const router = express.Router();
+const logger = createLogger('ADMIN-ROUTES');
 
 // Aplicar middleware de autenticación a todas las rutas de admin
 router.use(authenticateAdmin);
@@ -146,6 +148,15 @@ router.post('/subscriptions',
 
             const newSubscriptionId = await db.addActiveSubscription(subscriptionData, adminId);
 
+            logger.info('Suscripción creada', {
+                subscriptionId: newSubscriptionId,
+                email,
+                customerName,
+                adminEmail: req.admin.email,
+                startDate,
+                endDate
+            });
+
             // Log de la acción
             await db.logAccess({
                 email: req.admin.email,
@@ -169,9 +180,14 @@ router.post('/subscriptions',
             });
 
         } catch (error) {
-            console.error('Error creando suscripción:', error.message);
-            
-            if (error.code === 'SQLITE_CONSTRAINT_UNIQUE') {
+            logger.error('Error creando suscripción', {
+                error: error.message,
+                code: error.code,
+                adminEmail: req.admin?.email,
+                email: req.body?.email
+            });
+
+            if (error.code === 'SQLITE_CONSTRAINT_UNIQUE' || error.code === '23505') {
                 return res.status(409).json({
                     success: false,
                     error: 'Ya existe una suscripción para este email'
