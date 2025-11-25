@@ -488,13 +488,49 @@ function generateSubscriptionsHTML(admin, subscriptionsData) {
                             <td>${new Date(sub.start_date).toLocaleDateString()}</td>
                             <td>${new Date(sub.end_date).toLocaleDateString()}</td>
                             <td><span class="status-${sub.status}">${sub.status}</span></td>
-                            <td>
-                                <button class="btn expire-btn" data-subscription-id="${sub.id}">Expirar</button>
+                            <td class="actions-cell">
+                                <button class="btn btn-success btn-sm renew-btn"
+                                    data-subscription-id="${sub.id}"
+                                    data-email="${sub.email}"
+                                    data-name="${sub.customer_name}"
+                                    data-end-date="${sub.end_date}">
+                                    Renovar
+                                </button>
+                                <button class="btn btn-danger btn-sm expire-btn" data-subscription-id="${sub.id}">Expirar</button>
                             </td>
                         </tr>
                     `).join('')}
                 </tbody>
             </table>
+        </div>
+    </div>
+
+    <!-- Modal de Renovación -->
+    <div class="modal-overlay" id="renewModal">
+        <div class="modal">
+            <h2><i class="fas fa-sync-alt"></i> Renovar Suscripción</h2>
+            <div id="renewAlert"></div>
+            <div class="modal-info">
+                <p><strong>Email:</strong> <span id="renewEmail"></span></p>
+                <p><strong>Nombre:</strong> <span id="renewName"></span></p>
+                <p><strong>Fecha fin actual:</strong> <span id="renewCurrentEnd"></span></p>
+                <p><strong>Nueva fecha fin:</strong> <span id="renewNewEnd"></span></p>
+            </div>
+            <div class="form-group">
+                <label for="renewMonths">Meses a renovar:</label>
+                <select id="renewMonths">
+                    <option value="1">1 mes</option>
+                    <option value="2">2 meses</option>
+                    <option value="3">3 meses</option>
+                    <option value="6">6 meses</option>
+                    <option value="12">12 meses</option>
+                </select>
+            </div>
+            <div class="modal-actions">
+                <button class="btn btn-cancel" id="cancelRenew">Cancelar</button>
+                <button class="btn btn-success" id="confirmRenew">Confirmar Renovación</button>
+            </div>
+            <input type="hidden" id="renewSubscriptionId">
         </div>
     </div>
 
@@ -565,34 +601,46 @@ function generateSubscriptionsHTML(admin, subscriptionsData) {
             });
         }
 
-        // Event listeners para botones de expirar
+        // Helper para obtener token de admin
+        function getAuthHeaders() {
+            const headers = { 'Content-Type': 'application/json' };
+            const adminToken = (document.cookie || '').split(';').map(s => s.trim()).find(s => s.startsWith('adminToken='));
+            if (adminToken) {
+                const token = adminToken.split('=')[1];
+                if (token) headers['Authorization'] = 'Bearer ' + token;
+            }
+            return headers;
+        }
+
+        // Calcular nueva fecha
+        function calculateNewEndDate(currentEndDate, months) {
+            const date = new Date(currentEndDate);
+            date.setMonth(date.getMonth() + parseInt(months));
+            return date;
+        }
+
+        // Event listeners para botones de expirar y renovar
         document.addEventListener('DOMContentLoaded', function() {
+            // === Botones de Expirar ===
             const expireButtons = document.querySelectorAll('.expire-btn');
-            
+
             expireButtons.forEach(button => {
                 button.addEventListener('click', async function() {
                     const subscriptionId = this.getAttribute('data-subscription-id');
-                    
+
                     if (!confirm('¿Estás seguro de expirar esta suscripción?')) {
                         return;
                     }
 
                     try {
-                        const headers = {};
-                        const adminToken = (document.cookie || '').split(';').map(s => s.trim()).find(s => s.startsWith('adminToken='));
-                        if (adminToken) {
-                            const token = adminToken.split('=')[1];
-                            if (token) headers['Authorization'] = 'Bearer ' + token;
-                        }
-
                         const response = await fetch('/api/admin/subscriptions/' + subscriptionId, {
                             method: 'DELETE',
                             credentials: 'include',
-                            headers
+                            headers: getAuthHeaders()
                         });
 
                         const result = await response.json();
-                        
+
                         if (result && result.success) {
                             alert('Suscripción expirada correctamente');
                             location.reload();
@@ -604,6 +652,92 @@ function generateSubscriptionsHTML(admin, subscriptionsData) {
                         alert('Error de conexión al intentar expirar la suscripción');
                     }
                 });
+            });
+
+            // === Modal de Renovación ===
+            const renewModal = document.getElementById('renewModal');
+            const renewMonthsSelect = document.getElementById('renewMonths');
+            const renewNewEndSpan = document.getElementById('renewNewEnd');
+            let currentEndDate = null;
+
+            // Abrir modal al hacer clic en Renovar
+            const renewButtons = document.querySelectorAll('.renew-btn');
+            renewButtons.forEach(button => {
+                button.addEventListener('click', function() {
+                    const subscriptionId = this.getAttribute('data-subscription-id');
+                    const email = this.getAttribute('data-email');
+                    const name = this.getAttribute('data-name');
+                    currentEndDate = this.getAttribute('data-end-date');
+
+                    document.getElementById('renewSubscriptionId').value = subscriptionId;
+                    document.getElementById('renewEmail').textContent = email;
+                    document.getElementById('renewName').textContent = name;
+                    document.getElementById('renewCurrentEnd').textContent = new Date(currentEndDate).toLocaleDateString();
+
+                    // Calcular nueva fecha inicial
+                    renewMonthsSelect.value = '1';
+                    const newDate = calculateNewEndDate(currentEndDate, 1);
+                    renewNewEndSpan.textContent = newDate.toLocaleDateString();
+
+                    document.getElementById('renewAlert').innerHTML = '';
+                    renewModal.classList.add('active');
+                });
+            });
+
+            // Actualizar fecha al cambiar meses
+            renewMonthsSelect.addEventListener('change', function() {
+                if (currentEndDate) {
+                    const newDate = calculateNewEndDate(currentEndDate, this.value);
+                    renewNewEndSpan.textContent = newDate.toLocaleDateString();
+                }
+            });
+
+            // Cerrar modal
+            document.getElementById('cancelRenew').addEventListener('click', function() {
+                renewModal.classList.remove('active');
+            });
+
+            // Cerrar modal al hacer clic fuera
+            renewModal.addEventListener('click', function(e) {
+                if (e.target === renewModal) {
+                    renewModal.classList.remove('active');
+                }
+            });
+
+            // Confirmar renovación
+            document.getElementById('confirmRenew').addEventListener('click', async function() {
+                const subscriptionId = document.getElementById('renewSubscriptionId').value;
+                const months = parseInt(renewMonthsSelect.value);
+                const confirmBtn = this;
+                const alertDiv = document.getElementById('renewAlert');
+
+                try {
+                    confirmBtn.disabled = true;
+                    confirmBtn.textContent = 'Procesando...';
+
+                    const response = await fetch('/api/admin/subscriptions/' + subscriptionId + '/renew', {
+                        method: 'POST',
+                        credentials: 'include',
+                        headers: getAuthHeaders(),
+                        body: JSON.stringify({ months })
+                    });
+
+                    const result = await response.json();
+
+                    if (result && result.success) {
+                        alertDiv.innerHTML = '<div class="alert success">' + result.message + '</div>';
+                        setTimeout(() => location.reload(), 1000);
+                    } else {
+                        alertDiv.innerHTML = '<div class="alert error">' + (result.error || 'Error al renovar') + '</div>';
+                        confirmBtn.disabled = false;
+                        confirmBtn.textContent = 'Confirmar Renovación';
+                    }
+                } catch (error) {
+                    console.error('Error renovando suscripción:', error);
+                    alertDiv.innerHTML = '<div class="alert error">Error de conexión</div>';
+                    confirmBtn.disabled = false;
+                    confirmBtn.textContent = 'Confirmar Renovación';
+                }
             });
         });
     </script>
@@ -630,13 +764,37 @@ function getSharedCSS() {
         .stat-card h3 { font-size: 2rem; color: #2762ea; margin-bottom: 0.5rem; }
         .btn { background: #2762ea; color: white; border: none; padding: 0.75rem 1.5rem; border-radius: 4px; cursor: pointer; }
         .btn:hover { background: #5a67d8; }
+        .btn-success { background: #28a745; }
+        .btn-success:hover { background: #218838; }
+        .btn-danger { background: #dc3545; }
+        .btn-danger:hover { background: #c82333; }
+        .btn-sm { padding: 0.4rem 0.8rem; font-size: 0.875rem; }
         .form-group { margin-bottom: 1rem; }
         .form-group label { display: block; margin-bottom: 0.25rem; font-weight: 500; }
-        .form-group input { width: 100%; padding: 0.5rem; border: 1px solid #ddd; border-radius: 4px; }
+        .form-group input, .form-group select { width: 100%; padding: 0.5rem; border: 1px solid #ddd; border-radius: 4px; }
         table { width: 100%; background: white; border-radius: 8px; overflow: hidden; box-shadow: 0 2px 4px rgba(0,0,0,0.1); }
         th, td { padding: 1rem; text-align: left; border-bottom: 1px solid #eee; }
         th { background: #f8f9fa; font-weight: 600; }
         .mb { display: inline-block; margin-bottom: 24px; }
+        .actions-cell { display: flex; gap: 0.5rem; }
+        .status-active { color: #28a745; font-weight: 500; }
+        .status-expired { color: #dc3545; font-weight: 500; }
+        .status-suspended { color: #ffc107; font-weight: 500; }
+
+        /* Modal styles */
+        .modal-overlay { display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.5); z-index: 1000; align-items: center; justify-content: center; }
+        .modal-overlay.active { display: flex; }
+        .modal { background: white; border-radius: 8px; padding: 2rem; max-width: 400px; width: 90%; box-shadow: 0 4px 20px rgba(0,0,0,0.2); }
+        .modal h2 { margin-bottom: 1rem; color: #333; }
+        .modal-info { background: #f8f9fa; padding: 1rem; border-radius: 4px; margin-bottom: 1rem; }
+        .modal-info p { margin: 0.25rem 0; color: #666; }
+        .modal-info strong { color: #333; }
+        .modal-actions { display: flex; gap: 1rem; justify-content: flex-end; margin-top: 1.5rem; }
+        .btn-cancel { background: #6c757d; }
+        .btn-cancel:hover { background: #5a6268; }
+        .alert { padding: 0.75rem 1rem; border-radius: 4px; margin-bottom: 1rem; }
+        .alert.success { background: #d4edda; color: #155724; border: 1px solid #c3e6cb; }
+        .alert.error { background: #f8d7da; color: #721c24; border: 1px solid #f5c6cb; }
     `;
 }
 

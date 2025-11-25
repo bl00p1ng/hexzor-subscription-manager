@@ -222,48 +222,13 @@ router.put('/subscriptions/:id',
             const updates = req.body;
             const { db } = req.app.locals;
 
-            // Construir query de actualización dinámicamente
-            const updateFields = [];
-            const updateValues = [];
+            // Usar el método updateSubscription del PostgreSQLManager
+            const updated = await db.updateSubscription(subscriptionId, updates);
 
-            if (updates.customerName) {
-                updateFields.push('customer_name = ?');
-                updateValues.push(updates.customerName);
-            }
-
-            if (updates.endDate) {
-                updateFields.push('end_date = ?');
-                updateValues.push(updates.endDate);
-            }
-
-            if (updates.status) {
-                updateFields.push('status = ?');
-                updateValues.push(updates.status);
-            }
-
-            if (updates.notes !== undefined) {
-                updateFields.push('notes = ?');
-                updateValues.push(updates.notes);
-            }
-
-            if (updateFields.length === 0) {
-                return res.status(400).json({
-                    success: false,
-                    error: 'No hay campos para actualizar'
-                });
-            }
-
-            // Agregar timestamp de actualización
-            updateFields.push('updated_at = CURRENT_TIMESTAMP');
-            updateValues.push(subscriptionId);
-
-            const query = `UPDATE active_subscriptions SET ${updateFields.join(', ')} WHERE id = ?`;
-            const result = await db.query(query, updateValues);
-
-            if (result.rowCount === 0) {
+            if (!updated) {
                 return res.status(404).json({
                     success: false,
-                    error: 'Suscripción no encontrada'
+                    error: 'Suscripción no encontrada o sin cambios'
                 });
             }
 
@@ -284,6 +249,94 @@ router.put('/subscriptions/:id',
 
         } catch (error) {
             console.error('Error actualizando suscripción:', error.message);
+            res.status(500).json({
+                success: false,
+                error: 'Error interno del servidor'
+            });
+        }
+    }
+);
+
+/**
+ * POST /api/admin/subscriptions/:id/renew
+ * Renueva una suscripción por N meses
+ */
+router.post('/subscriptions/:id/renew',
+    [
+        body('months')
+            .isInt({ min: 1, max: 24 })
+            .withMessage('Meses debe ser un número entre 1 y 24')
+    ],
+    async (req, res) => {
+        try {
+            const errors = validationResult(req);
+            if (!errors.isEmpty()) {
+                return res.status(400).json({
+                    success: false,
+                    error: 'Datos inválidos',
+                    details: errors.array()
+                });
+            }
+
+            const subscriptionId = req.params.id;
+            const { months } = req.body;
+            const { db } = req.app.locals;
+
+            // Obtener suscripción actual
+            const result = await db.query(
+                'SELECT * FROM active_subscriptions WHERE id = $1',
+                [subscriptionId]
+            );
+
+            if (result.rows.length === 0) {
+                return res.status(404).json({
+                    success: false,
+                    error: 'Suscripción no encontrada'
+                });
+            }
+
+            const subscription = result.rows[0];
+
+            // Calcular nueva fecha de fin
+            const currentEndDate = new Date(subscription.end_date);
+            const newEndDate = new Date(currentEndDate);
+            newEndDate.setMonth(newEndDate.getMonth() + months);
+
+            // Actualizar suscripción
+            const updated = await db.updateSubscription(subscriptionId, {
+                endDate: newEndDate.toISOString().split('T')[0],
+                status: 'active'
+            });
+
+            if (!updated) {
+                return res.status(500).json({
+                    success: false,
+                    error: 'No se pudo actualizar la suscripción'
+                });
+            }
+
+            // Log de la acción
+            await db.logAccess({
+                email: req.admin.email,
+                action: 'subscription_renewed',
+                ipAddress: req.ip,
+                userAgent: req.get('User-Agent'),
+                success: true,
+                errorMessage: `Renewed subscription ${subscription.email} for ${months} month(s). New end date: ${newEndDate.toISOString().split('T')[0]}`
+            });
+
+            res.json({
+                success: true,
+                message: `Suscripción renovada por ${months} ${months === 1 ? 'mes' : 'meses'}`,
+                data: {
+                    email: subscription.email,
+                    previousEndDate: subscription.end_date,
+                    newEndDate: newEndDate.toISOString().split('T')[0]
+                }
+            });
+
+        } catch (error) {
+            console.error('Error renovando suscripción:', error.message);
             res.status(500).json({
                 success: false,
                 error: 'Error interno del servidor'
